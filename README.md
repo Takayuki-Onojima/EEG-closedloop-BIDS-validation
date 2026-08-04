@@ -141,7 +141,8 @@ conda activate closedloop
 
 ## License
 
-Released under the Creative Commons Attribution-NonCommercial 4.0 International
-License; see `LICENSE`. Copyright (c) 2025 Takayuki Onojima, Keiichi Kitajo.
-The dataset these scripts analyse is distributed separately and under its own
-terms.
+The code in this directory is released under the MIT License; see `LICENSE`.
+Copyright (c) 2025 Takayuki Onojima, Keiichi Kitajo.
+
+The dataset these scripts analyse is distributed separately, under the Creative
+Commons Attribution-NonCommercial 4.0 International License.

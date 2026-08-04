@@ -1,0 +1,14 @@
+# Dependencies of the technical-validation scripts.
+#
+# The list is short because these scripts read the BrainVision binaries directly
+# with numpy.memmap, taking only the two channels each analysis needs, and parse
+# the TSV files with the standard library. MNE, MNE-BIDS and pandas are
+# therefore not required. Tables 3 and 4 need no third-party package at all.
+#
+# Minimum versions are given so the code runs in an existing environment; the
+# released outputs were produced with numpy 2.0.1, scipy 1.15.3 and
+# matplotlib 3.10.6 on Python 3.10.
+
+numpy>=1.24
+scipy>=1.9
+matplotlib>=3.6

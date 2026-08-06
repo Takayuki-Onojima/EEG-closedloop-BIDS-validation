@@ -184,7 +184,7 @@ def analog_rows(root: Path, out: Path):
             "Mean delay (ms)": round(float(b_minus_an.mean()), 2),
             "SD (ms)": round(float(b_minus_an.std(ddof=1)), 2),
             "Number of trials": int(b_minus_an.size),
-            "Notes": f"within participants a constant (SD {within:.2f} ms); participant means span {spread(diff_sub):.2f} ms, set by the StimTrak threshold",
+            "Notes": f"within participants a constant (SD {within:.2f} ms); participant means span {spread(diff_sub):.2f} ms, set by the StimTrak threshold; per-participant values are reproducible with `code/photodiode_onset.py`",
         },
     ]
 

@@ -11,31 +11,51 @@ https://github.com/Takayuki-Onojima/EEG-closedloop-BIDS-validation.
 
 ## Scripts overview
 
-### 1. Phase extraction
+### 1. Visual onset
+
+`photodiode_onset.py` — measures when the display actually changed, from the
+analogue `PhotoSensor` channel rather than from a marker.
+
+The dataset carries two references derived from the same photodiode: the
+analogue channel, and marker `B`, which the in-line StimTrak emits when that
+signal crosses a threshold. Both see the same flash and carry the same
+trial-to-trial jitter — `B` minus the analogue onset has a within-participant SD
+of 0.06 ms — but the threshold had to be set by hand for each session, and a
+threshold decides *where on the rise* the marker fires. Participant means of `B`
+therefore span 3.10 ms where the analogue onset spans 0.33 ms, which is 8 deg
+against 0.8 deg of 7 Hz phase.
+
+This script takes the onset as the half-amplitude crossing of the pulse,
+interpolated between samples at the native 5 kHz, with the same criterion in
+every session. It writes a cache the phase extraction, the topography and
+Table 4 all read, so it has to run first.
+
+### 2. Phase extraction
 
 `compare_trigger_references.py` — measures the realised stimulation phase against
-each of the three timestamps available for every stimulus:
+each of the four anchors available for every stimulus:
 
 - `A`, the trigger the Speedgoat emitted when it detected the target phase
 - the stimulation PC's own trigger, that is, the presentation command
-- `B`, the photosensor, which marks the actual luminance change on the display
+- `B`, the StimTrak marker
+- the photodiode onset, from `photodiode_onset.py`
 
-Because the three differ only by the inter-trigger latency, the choice of anchor
+Because these differ only by the inter-trigger latency, the choice of anchor
 shifts the realised phase; this script quantifies that. It writes a cache that
-Table 5 and Figure 2 both consume, so it has to run first.
+Table 5 and Figure 2 both consume.
 
-### 2. Tables
+### 3. Tables
 
 - `technical_validation_table3_trial_completeness.py` — trial counts per participant
 - `technical_validation_table4_timing_consistency.py` — latencies between the three triggers
 - `technical_validation_table5_phase_statistics.py` — circular statistics of the realised phase
 
-### 3. Figure
+### 4. Figure
 
 `technical_validation_figure2_phase_targeting.py` draws all three panels of
 Figure 2 and writes them as SVG, PDF and PNG:
 
-- **a** phase-targeting accuracy on the control channel, from the cache written by `compare_trigger_references.py`
+- **a** phase-targeting accuracy on the control channel, anchored on the stimulation-PC trigger and on the photodiode onset at once, from the cache written by `compare_trigger_references.py`
 - **b** scalp topography of the same phase locking at seven latencies around visual onset, from the cache written by `compute_plf_topography.py`
 - **c** the phase-locking factor over time on the control channel
 
@@ -51,19 +71,25 @@ dataset as `code/`; pass the option explicitly when the code lives elsewhere.
 
 ```
 # from inside the dataset
-python code/compare_trigger_references.py
+python code/photodiode_onset.py
 python code/technical_validation_table5_phase_statistics.py
 
 # with the code checked out separately
-python compare_trigger_references.py --bids_root /path/to/BIDS_EEG_Closed-loop_Visual_Stimu_Exp
+python photodiode_onset.py --bids_root /path/to/BIDS_EEG_Closed-loop_Visual_Stimu_Exp
 python technical_validation_figure2_phase_targeting.py --bids_root /path/to/dataset --out /tmp/figures
 ```
 
-Run order: the two extraction scripts first, then anything that reads their
-caches. Figure 2 needs both. Tables 3 and 4 are independent of everything else.
+The caches are written under `--out`, which defaults to
+`derivatives/technical_validation/` inside the dataset. Scripts that read a cache
+look for it there too, so pass the same `--out` to every step of a run.
+
+Run order: `photodiode_onset.py` first, since the other two extraction scripts
+anchor on its result; then those two, then anything that reads their caches.
+Figure 2 needs both. Table 3 is independent of everything else.
 
 ```
-python code/compare_trigger_references.py                       # about 10 min
+python code/photodiode_onset.py                                 # about 5 min
+python code/compare_trigger_references.py                       # about 15 min
 python code/compute_plf_topography.py                           # about 30 min
 python code/technical_validation_table3_trial_completeness.py
 python code/technical_validation_table4_timing_consistency.py
@@ -71,7 +97,25 @@ python code/technical_validation_table5_phase_statistics.py
 python code/technical_validation_figure2_phase_targeting.py
 ```
 
+Each cached step is skipped when its `.npz` is already present, so a rerun after
+the first pass takes seconds. Delete the `.npz` to force recomputation.
+
 ## Implementation details
+
+### Visual onset (`photodiode_onset.py`)
+
+The white patch is drawn for a single frame, so the photodiode sees a brief flash
+that saturates the amplifier. The onset is taken at half the pulse amplitude,
+which is stable against the exact saturation level, and interpolated between
+samples. Results are cached in `photodiode_onset_cache.npz`, and the
+participant-level offsets between `B` and the analogue onset are written to
+`photodiode_onset_per_participant.csv` so that analyses built on the marker can
+be converted onto the analogue onset.
+
+Neither reference is the retinal onset: the photodiode watches the upper-left
+corner of the screen while the stimuli were presented near the middle, and an LCD
+refreshes from top to bottom, so both carry a further constant offset of up to
+one frame. That offset is common to every trial, participant and condition.
 
 ### Phase extraction (`compare_trigger_references.py`)
 
@@ -95,6 +139,11 @@ header rather than assumed:
 - reads the phase 200 ms before the anchoring trigger, the prestimulus reference
   the closed-loop system targeted
 
+The photodiode onset is the anchor used for absolute phase. Moving to it from `B`
+does not make the bias smaller — it goes from +13.67 to +15.00 deg, because the
+analogue onset is 0.51 ms later than the marker — but it makes the offset the
+same for all 18 participants instead of one that moves with a knob setting.
+
 The band-pass deserves a note. Online, the controller had to run causally and
 used a 128th-order FIR at 500 Hz, which is only 258 ms long and passes 4.4 to
 9.6 Hz at half power rather than the nominal 6 to 8 Hz. Offline there is no such
@@ -105,8 +154,8 @@ narrow-band definition about 0.69. Both are correct measurements of different
 quantities; the narrow-band one is used here because it is what a reader
 recomputing the phase of the 6-8 Hz component from the released data will obtain.
 
-Reading and filtering all 109 phase-dependent runs takes roughly ten minutes, so
-the extracted phases are cached in
+Reading and filtering all 109 phase-dependent runs takes roughly a quarter of an
+hour, so the extracted phases are cached in
 `derivatives/technical_validation/trigger_reference_comparison.npz`. Delete that
 file to force a full recomputation; with the cache present, Table 5 and Figure 2
 rerun in seconds.

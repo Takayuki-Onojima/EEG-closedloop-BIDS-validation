@@ -1,14 +1,18 @@
 # Dependencies of the technical-validation scripts.
 #
-# The list is short because these scripts read the BrainVision binaries directly
-# with numpy.memmap, taking only the two channels each analysis needs, and parse
-# the TSV files with the standard library. MNE, MNE-BIDS and pandas are
-# therefore not required. Tables 3 and 4 need no third-party package at all.
+# Tables 3 and 4 read only the TSV files and need no third-party package at all.
+# The phase analysis and the two figures read the BrainVision recordings through
+# MNE-Python, so that channel names, units and the reference scheme come from the
+# file header rather than from any assumption about the binary layout, and so
+# that the preprocessing is expressed in the same library a reader would use to
+# reopen the data. MNE also supplies the montage and the topographic plotting
+# used by Figure 3. MNE-BIDS and pandas are not required.
 #
 # Minimum versions are given so the code runs in an existing environment; the
-# released outputs were produced with numpy 2.0.1, scipy 1.15.3 and
-# matplotlib 3.10.6 on Python 3.10.
+# released outputs were produced with numpy 2.0.1, scipy 1.15.3,
+# matplotlib 3.10.6 and mne 1.12.1 on Python 3.10.
 
 numpy>=1.24
 scipy>=1.9
 matplotlib>=3.6
+mne>=1.6

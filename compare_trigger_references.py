@@ -10,29 +10,54 @@ the choice shifts the realised phase by the inter-trigger latency (median
 A->stim 1.0 ms, stim->B 6.2 ms). This script measures the resulting phase
 distribution for all three so the correct anchor can be chosen from the data.
 
-Phase is taken from the analytic signal at 500 Hz but interpolated linearly in
-the complex plane, because index rounding at 500 Hz alone would introduce up to
-+-2.7 deg - the same order as the bias being measured.
+Preprocessing reproduces the online control pipeline and is carried out with
+MNE-Python, so that channel names, units and the reference scheme are handled by
+the same library a reader would use to reopen the data:
+
+  1. read the BrainVision recording, which gives channel names and units from
+     the header rather than from any assumption about the file layout
+  2. restore the recording reference as a zero-valued channel (A1, the left
+     earlobe) and re-reference to the average of A1 and X2, the recorded right
+     earlobe; this is the linked-earlobe montage the online system used
+  3. resample to 500 Hz, the rate the online system worked at
+  4. band-pass 6-8 Hz, zero-phase, with 1 Hz transition bands
+  5. Hilbert transform, then read the phase at a chosen offset from each trigger
+
+The band-pass deserves a note. Online, the controller had to run causally and
+used a 128th-order FIR at 500 Hz, which is only 258 ms long and therefore passes
+a good deal more than 6-8 Hz. Offline there is no such constraint, so the filter
+here is designed properly and measures the phase of the 6-8 Hz component itself.
+The two definitions do not agree: against the controller's own broadband
+definition the six conditions reach a resultant length of about 0.93, against
+the narrow-band definition about 0.69. Both are correct measurements of
+different quantities, and the narrow-band one is used here because it is what a
+reader recomputing the phase from the released data will obtain.
+
+Phase is interpolated linearly in the complex plane, because index rounding at
+500 Hz alone would introduce up to +-2.7 deg, the same order as the bias being
+measured.
 """
 
 import csv
 import math
-import os
 from pathlib import Path
 
 import figure_style as st
 
+import mne
 import numpy as np
-from scipy.signal import decimate, filtfilt, firwin, hilbert
 
-NCH, FS = 67, 5000
-DS = 10
-FS_DS = FS // DS
-FIR_ORDER = 128
+TARGET_FS = 500                 # rate the online system worked at
 BAND = (6.0, 8.0)
+# 1 Hz transition bands either side; MNE then picks the filter length needed to
+# achieve them, which is far longer than the 128th-order filter the online system
+# had to make do with in real time. See the note in the module docstring.
+TRANS_BW = 1.0
 REFERENCE_MS = -200.0
 OFFSETS_MS = np.arange(-400, 101, 5)
 REFS = ("A", "stim", "B")
+RECORDING_REFERENCE = "A1"      # left earlobe, not stored as a channel
+RIGHT_EARLOBE = "X2"
 
 TARGET = {1: -math.pi/3, 2: 0.0, 3: math.pi/3, 4: 2*math.pi/3, 5: math.pi, 6: 4*math.pi/3}
 
@@ -42,9 +67,28 @@ def read_tsv(path):
         return list(csv.DictReader(f, delimiter="\t"))
 
 
+def analytic_signal(vhdr: Path, channel: str):
+    """Preprocessed analytic signal for one channel, following the online pipeline."""
+    raw = mne.io.read_raw_brainvision(vhdr, preload=False, verbose="ERROR")
+    missing = [c for c in (channel, RIGHT_EARLOBE) if c not in raw.ch_names]
+    if missing:
+        raise SystemExit(f"{vhdr.name}: missing channel(s) {missing}")
+
+    raw.pick([channel, RIGHT_EARLOBE]).load_data(verbose="ERROR")
+    raw = mne.add_reference_channels(raw, RECORDING_REFERENCE)
+    raw.set_eeg_reference([RECORDING_REFERENCE, RIGHT_EARLOBE], verbose="ERROR")
+
+    raw.resample(TARGET_FS, verbose="ERROR")
+    raw.filter(BAND[0], BAND[1], picks=[channel], method="fir", fir_design="firwin",
+               phase="zero", l_trans_bandwidth=TRANS_BW, h_trans_bandwidth=TRANS_BW,
+               verbose="ERROR")
+    raw.apply_hilbert(picks=[channel], verbose="ERROR")
+    return raw.get_data(picks=[channel])[0]
+
+
 def analytic_at(z, t_s):
     """Linear interpolation of the complex analytic signal at time t (seconds)."""
-    x = t_s * FS_DS
+    x = t_s * TARGET_FS
     i = int(np.floor(x))
     if i < 0 or i + 1 >= len(z):
         return None
@@ -55,7 +99,6 @@ def analytic_at(z, t_s):
 def collect(root: Path):
     chmap = {r["participant_id"]: r["phase_estimation_channel"]
              for r in read_tsv(root / "participants.tsv")}
-    taps = firwin(FIR_ORDER + 1, BAND, pass_zero=False, fs=FS_DS)
 
     # phases[ref][cond][offset] -> list
     phases = {ref: {c: {o: [] for o in OFFSETS_MS} for c in range(1, 7)} for ref in REFS}
@@ -67,17 +110,11 @@ def collect(root: Path):
         if not ch or ch == "n/a":
             continue
         stem = ev_path.name[: -len("_events.tsv")]
-        eeg_path = ev_path.with_name(stem + "_eeg.eeg")
-        if not eeg_path.exists():
+        vhdr = ev_path.with_name(stem + "_eeg.vhdr")
+        if not vhdr.exists():
             continue
 
-        names = [r["name"] for r in read_tsv(ev_path.with_name(stem + "_channels.tsv"))]
-        n = os.path.getsize(eeg_path) // (NCH * 4)
-        mm = np.memmap(eeg_path, dtype="<f4", mode="r", shape=(n, NCH))
-        sig = (np.asarray(mm[:, names.index(ch)], np.float64)
-               - np.asarray(mm[:, names.index("X2")], np.float64) / 2.0)
-        del mm
-        z = hilbert(filtfilt(taps, 1.0, decimate(sig, DS, ftype="fir", zero_phase=True)))
+        z = analytic_signal(vhdr, ch)
 
         rows = read_tsv(ev_path)
         last_a = None

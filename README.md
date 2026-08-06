@@ -1,9 +1,9 @@
 # Code release for the manuscript: "An EEG dataset acquired during closed-loop phase-dependent visual stimulation"
 
 Scripts that regenerate the technical-validation outputs reported in the data
-descriptor: Tables 3, 4 and 5, and Figure 2. They read a released copy of the
-BIDS dataset and write to `derivatives/technical_validation/` inside it. None of
-them modify the released data.
+descriptor: Tables 3, 4 and 5, and Figures 2 and 3. They read a released copy of
+the BIDS dataset and write to `derivatives/technical_validation/` inside it. None
+of them modify the released data.
 
 This directory is self-contained: it is both the `code/` directory of the BIDS
 dataset and the whole of the repository at
@@ -30,10 +30,13 @@ Table 5 and Figure 2 both consume, so it has to run first.
 - `technical_validation_table4_timing_consistency.py` — latencies between the three triggers
 - `technical_validation_table5_phase_statistics.py` — circular statistics of the realised phase
 
-### 3. Figure
+### 3. Figures
 
-- `technical_validation_figure2_phase_targeting.py` — phase-targeting accuracy, written as SVG, PDF and PNG
+- `technical_validation_figure2_phase_targeting.py` — phase-targeting accuracy on the control channel
+- `technical_validation_figure3_plf_topography.py` — scalp topography of the same phase locking, at seven latencies around visual onset
 - `figure_style.py` — shared figure sizing, type and path handling; imported by the others, not run on its own
+
+Both figures are written as SVG, PDF and PNG.
 
 ## Usage examples
 
@@ -51,31 +54,35 @@ python compare_trigger_references.py --bids_root /path/to/BIDS_EEG_Closed-loop_V
 python technical_validation_figure2_phase_targeting.py --bids_root /path/to/dataset --out /tmp/figures
 ```
 
-Run order: `compare_trigger_references.py` first, then anything else. Tables 3
-and 4 are independent of it and of each other.
+Run order: `compare_trigger_references.py` first, then Table 5 and Figure 2.
+Tables 3 and 4 and Figure 3 are independent of it and of each other.
 
 ```
-python code/compare_trigger_references.py                       # about 30 min
+python code/compare_trigger_references.py                       # about 10 min
 python code/technical_validation_table3_trial_completeness.py
 python code/technical_validation_table4_timing_consistency.py
 python code/technical_validation_table5_phase_statistics.py
 python code/technical_validation_figure2_phase_targeting.py
+python code/technical_validation_figure3_plf_topography.py      # about 30 min
 ```
 
 ## Implementation details
 
 ### Phase extraction (`compare_trigger_references.py`)
 
-Reproduces the online control pipeline so that the measured phase is comparable
-with what the closed-loop system was targeting:
+Reproduces the online control pipeline with MNE-Python, so that the measured
+phase is comparable with what the closed-loop system was targeting and so that
+channel names, units and the reference scheme are taken from the BrainVision
+header rather than assumed:
 
 - takes the participant-specific channel named in the `phase_estimation_channel`
   column of `participants.tsv`
-- re-references it to the average of the two earlobes, `signal − X2/2`, since
-  `X2` is the right earlobe recorded against the left-earlobe reference
-- decimates from 5000 to 500 Hz, the rate the online system worked at
-- band-pass filters between 6 and 8 Hz with a 128th-order FIR filter applied
-  forwards and backwards, giving zero phase distortion
+- restores the recording reference, the left earlobe, as a zero-valued channel
+  and re-references to the average of that channel and `X2`, the recorded right
+  earlobe, giving the linked-earlobe montage the online system used
+- resamples from 5000 to 500 Hz, the rate the online system worked at
+- band-pass filters between 6 and 8 Hz with a zero-phase FIR filter (`firwin`,
+  1 Hz transition bands either side)
 - converts to an analytic signal by the Hilbert transform and interpolates it
   linearly in the complex plane, so the sampling instant is not tied to the 2 ms
   grid; index rounding alone would introduce up to ±2.7°, the same order as the
@@ -83,18 +90,41 @@ with what the closed-loop system was targeting:
 - reads the phase 200 ms before the anchoring trigger, the prestimulus reference
   the closed-loop system targeted
 
-Reading and filtering all 109 phase-dependent runs takes roughly half an hour, so
+The band-pass deserves a note. Online, the controller had to run causally and
+used a 128th-order FIR at 500 Hz, which is only 258 ms long and passes 4.4 to
+9.6 Hz at half power rather than the nominal 6 to 8 Hz. Offline there is no such
+constraint, and the filter used here is 3.3 s long and passes 5.6 to 8.4 Hz. The
+two therefore define "phase" differently: against the controller's own broadband
+definition the six conditions reach a resultant length of about 0.93, against the
+narrow-band definition about 0.69. Both are correct measurements of different
+quantities; the narrow-band one is used here because it is what a reader
+recomputing the phase of the 6-8 Hz component from the released data will obtain.
+
+Reading and filtering all 109 phase-dependent runs takes roughly ten minutes, so
 the extracted phases are cached in
 `derivatives/technical_validation/trigger_reference_comparison.npz`. Delete that
 file to force a full recomputation; with the cache present, Table 5 and Figure 2
 rerun in seconds.
 
+### Topography (`technical_validation_figure3_plf_topography.py`)
+
+Same preprocessing, but applied to all 63 scalp electrodes rather than one, and
+therefore about three times slower. For each stimulus the target phase assigned
+to that trial is subtracted from the measured phase, which is what makes the six
+conditions poolable — without it they would cancel, since they are spread evenly
+around the cycle by design. Locking is summarised per electrode as the resultant
+length of those differences, computed within each participant and then averaged
+across participants so that participants with more trials do not dominate.
+Electrode positions come from MNE's `standard_1005` montage. Results are cached
+in `plf_topography_cache.npz` and also written as a CSV.
+
 ### Circular statistics (`technical_validation_table5_phase_statistics.py`)
 
 Follows Fisher, *Statistical Analysis of Circular Data* (1993): mean resultant
 length `R`; circular standard deviation `sqrt(-2 ln R)`; a large-sample 95 %
-confidence interval `mean ± 1.96 · circSD / sqrt(n)`, accurate here because `R`
-exceeds 0.9 in every cell; and the Rayleigh statistic `Z = n R²`.
+confidence interval `mean ± 1.96 · circSD / sqrt(n)`, which is adequate here
+because every cell pools more than two thousand stimuli; and the Rayleigh
+statistic `Z = n R²`.
 
 ### Figures (`figure_style.py`)
 
@@ -105,8 +135,7 @@ outlines, so the SVG and PDF remain editable.
 ## Requirements
 
 Python 3.10 or later. Tables 3 and 4 use only the standard library; the phase
-analysis and Figure 2 additionally need the packages below, pinned to the
-versions the released outputs were produced with.
+analysis and the figures additionally need the packages below.
 
 ```
 pip install -r requirements.txt
@@ -117,9 +146,10 @@ pip install -r requirements.txt
 | `numpy` | 2.0.1 |
 | `scipy` | 1.15.3 |
 | `matplotlib` | 3.10.6 |
+| `mne` | 1.12.1 |
 
-Figure 2 is typeset in Arial; if it is unavailable, matplotlib falls back to
-Helvetica and then to DejaVu Sans and the figure still renders.
+The figures are typeset in Arial; if it is unavailable, matplotlib falls back to
+Helvetica and then to DejaVu Sans and they still render.
 
 ### Setting up an environment
 
@@ -137,6 +167,7 @@ With conda:
 ```
 conda create -n closedloop python=3.10 numpy scipy matplotlib
 conda activate closedloop
+pip install mne
 ```
 
 ## License

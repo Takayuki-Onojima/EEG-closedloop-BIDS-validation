@@ -88,22 +88,26 @@ def panel_a(fig, gs, phases):
         axes.append(ax)
         target = TARGET[cond]
 
-        # drawn as closed profiles rather than bars, which stay legible overlaid
-        profiles, biases = [], []
+        hists, biases = [], []
         for ref, colour, _ in OVERLAY:
             a = np.asarray(phases[ref][cond][REFERENCE_MS], float)
             counts, edges = np.histogram(a, bins=36, range=(-math.pi, math.pi))
-            centres = edges[:-1] + np.diff(edges) / 2
-            profiles.append((np.append(centres, centres[0]),
-                             np.append(counts, counts[0]), colour, circmean(a)))
+            hists.append((edges[:-1] + np.diff(edges) / 2, np.diff(edges),
+                          counts, colour, circmean(a)))
             biases.append(math.degrees(wrap(circmean(a) - target)))
 
-        top = max(p[1].max() for p in profiles) or 1
-        ax.plot([target, target], [0, top], "--", color="black", lw=1.0, zorder=5)
-        for theta, counts, colour, m in profiles:
-            ax.fill(theta, counts, color=colour, alpha=0.16, edgecolor="none", zorder=1)
-            ax.plot(theta, counts, color=colour, lw=0.8, zorder=2)
-            ax.plot([m, m], [0, top], "-", color=colour, lw=1.2, zorder=6)
+        top = max(h[2].max() for h in hists) or 1
+        for centres, widths, counts, colour, _ in hists:
+            ax.bar(centres, counts, width=widths, color=colour, alpha=0.45,
+                   edgecolor="none", zorder=1)
+
+        # the stim mean lands on the target by design and would hide it if the two
+        # were drawn the same width. Draw the target wider and underneath, so it
+        # reads as a black casing around the mean wherever they coincide; running
+        # it past the rim instead would collide with the angular tick labels.
+        ax.plot([target, target], [0, top], "--", color="black", lw=2.0, zorder=3)
+        for _, _, _, colour, m in hists:
+            ax.plot([m, m], [0, top], "-", color=colour, lw=1.0, zorder=6)
 
         ax.set_theta_zero_location("E")
         ax.set_theta_direction(1)          # counter-clockwise
@@ -134,6 +138,7 @@ def panel_b(fig, gs, channels, plf):
                                      contours=4, sensors=True, outlines="head")
         weight = "bold" if o == REFERENCE_MS else "normal"
         ax.set_title(f"{o:+d} ms", fontsize=st.FS_ANNOT, fontweight=weight, pad=3)
+    axes[0].set_ylabel("relative to B", fontsize=st.FS_TICK, labelpad=1)
 
     # the colourbar column spans the full row height, but the topomaps are square
     # and so occupy only part of it; match the colourbar to their drawn extent
@@ -155,7 +160,7 @@ def panel_c(fig, gs, phases, offsets):
         ax.plot(offsets, r, lw=0.9, label=f"target {label(cond)}")
     ax.axvline(REFERENCE_MS, color="black", ls="--", lw=0.9)
     ax.axvline(0, color="grey", ls="--", lw=0.9)
-    ax.set_xlabel("time relative to photosensor-confirmed visual onset (ms)")
+    ax.set_xlabel("time relative to visual onset, anchored on the photosensor B (ms)")
     ax.set_ylabel("phase-locking factor")
     ax.set_xlim(offsets[0], offsets[-1])
     ax.set_ylim(0, 1.0)
@@ -163,7 +168,7 @@ def panel_c(fig, gs, phases, offsets):
               bbox_to_anchor=(0.998, 0.995), columnspacing=1.0,
               handlelength=1.3, labelspacing=0.35, borderaxespad=0.2)
     ax.text(REFERENCE_MS, 1.02, "prestimulus target", ha="center", fontsize=st.FS_TICK)
-    ax.text(0, 1.02, "visual onset", ha="center", fontsize=st.FS_TICK, color="grey")
+    ax.text(0, 1.02, "visual onset (B)", ha="center", fontsize=st.FS_TICK, color="grey")
     for sp in ("top", "right"):
         ax.spines[sp].set_visible(False)
     return ax
@@ -188,8 +193,8 @@ def plot(path: Path, phases, offsets, channels, plf):
     # clear of both the 270 deg labels hanging below the polar block and the
     # latency titles above the topographies
     spacer = outer[1].get_position(fig)
-    handles = [plt.Line2D([], [], color="black", ls="--", lw=1.0, label="target phase")]
-    handles += [plt.Line2D([], [], color=c, lw=1.2, label=f"realised, anchored on {name}")
+    handles = [plt.Line2D([], [], color="black", ls="--", lw=2.0, label="target phase")]
+    handles += [plt.Line2D([], [], color=c, lw=1.0, label=f"realised, anchored on {name}")
                 for _, c, name in OVERLAY]
     fig.legend(handles=handles, loc="center",
                bbox_to_anchor=(0.5, spacer.y0 + spacer.height / 2),

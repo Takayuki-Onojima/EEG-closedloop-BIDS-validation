@@ -1,8 +1,10 @@
-"""Figure 3 - scalp topography of phase locking to the intended target phase.
+"""Scalp topography of phase locking to the intended target phase.
 
-Figure 2 shows how well the realised phase matched its target on the one channel
-each participant's controller was driven from. This figure asks where else on the
-scalp that locking is present, and when.
+Panel a of Figure 2 shows how well the realised phase matched its target on the
+one channel each participant's controller was driven from. On that channel a high
+resultant length is partly what the loop was built to produce, so this script
+asks the separate question of where else on the scalp the intended phase was
+present, and when. The answer is drawn as panel b of Figure 2.
 
 For every phase-dependent stimulus the phase of each scalp electrode is measured
 at a series of latencies around the photodiode-confirmed visual onset, and the
@@ -20,7 +22,9 @@ PLF is computed within each participant and then averaged across participants, s
 that participants with slightly more trials do not dominate.
 
 Preprocessing matches code/compare_trigger_references.py: linked-earlobe
-reference, 500 Hz, 6-8 Hz zero-phase band-pass, Hilbert transform.
+reference, 500 Hz, 6-8 Hz zero-phase band-pass, Hilbert transform. Applying it to
+all 63 scalp electrodes rather than one makes this the slowest script in the
+directory, so the result is cached and Figure 2 reads the cache.
 """
 
 import csv
@@ -29,9 +33,6 @@ from pathlib import Path
 
 import figure_style as st
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import mne
 import numpy as np
 
@@ -48,6 +49,8 @@ REFERENCE_MS = -200.0
 
 TARGET = {1: -math.pi/3, 2: 0.0, 3: math.pi/3, 4: 2*math.pi/3, 5: math.pi, 6: 4*math.pi/3}
 
+CACHE_NAME = "plf_topography_cache.npz"
+
 
 def read_tsv(path):
     with open(path, encoding="utf-8", newline="") as f:
@@ -55,7 +58,7 @@ def read_tsv(path):
 
 
 def analytic_all_channels(vhdr: Path):
-    """Analytic signal for every scalp electrode, preprocessed as in Figure 2."""
+    """Analytic signal for every scalp electrode, preprocessed as in Figure 2a."""
     raw = mne.io.read_raw_brainvision(vhdr, preload=False, verbose="ERROR")
     scalp = [c for c in raw.ch_names if c not in NON_SCALP]
     raw.pick(scalp + [RIGHT_EARLOBE]).load_data(verbose="ERROR")
@@ -74,7 +77,7 @@ def collect(root: Path):
     chmap = {r["participant_id"]: r["phase_estimation_channel"]
              for r in read_tsv(root / "participants.tsv")}
 
-    per_subject = {}          # sub -> {latency: complex sum}, and a trial count
+    per_subject = {}          # sub -> ({latency: complex mean}, trial count)
     channels = None
 
     for sub in sorted({p.name for p in root.glob("sub-*") if p.is_dir()}):
@@ -139,72 +142,41 @@ def collect(root: Path):
     return channels, per_subject
 
 
-def plot(path: Path, channels, plf, n_subj, n_trials):
-    info = mne.create_info(channels, TARGET_FS, ch_types="eeg")
-    info.set_montage("standard_1005", match_case=False, on_missing="warn")
-
-    # each topomap is square, so the height follows from the width available to
-    # one column; anything taller only adds white space
-    fig = plt.figure(figsize=(st.WIDTH_2COL, 36 * st.MM))
-    gs = fig.add_gridspec(1, len(LATENCIES_MS) + 1,
-                          width_ratios=[1] * len(LATENCIES_MS) + [0.06],
-                          wspace=0.15, top=0.86, bottom=0.02, left=0.01, right=0.95)
-
-    vmax = float(max(plf[o].max() for o in LATENCIES_MS))
-    im = None
-    axes = []
-    for k, o in enumerate(LATENCIES_MS):
-        ax = fig.add_subplot(gs[0, k])
-        axes.append(ax)
-        im, _ = mne.viz.plot_topomap(plf[o], info, axes=ax, show=False,
-                                     cmap="viridis", vlim=(0, vmax),
-                                     contours=4, sensors=True, outlines="head")
-        weight = "bold" if o == REFERENCE_MS else "normal"
-        ax.set_title(f"{o:+d} ms", fontsize=st.FS_ANNOT, fontweight=weight, pad=3)
-
-    # the colourbar column spans the full figure height, but the topomaps are
-    # square and so occupy only part of it; match the colourbar to their extent
-    pos = axes[0].get_position()
-    cax = fig.add_axes([gs[0, -1].get_position(fig).x0, pos.y0, 0.008, pos.height])
-    cb = fig.colorbar(im, cax=cax)
-    cb.set_label("phase-locking factor", fontsize=st.FS_ANNOT, labelpad=2)
-    cb.ax.tick_params(labelsize=st.FS_TICK, length=2, pad=1.5)
-    cb.outline.set_linewidth(0.5)
-
-    for f in st.save(fig, path):
-        print(f"wrote {f}")
-    plt.close(fig)
+def load(out: Path):
+    """Channels, the grand-average PLF per latency, and the pooled counts."""
+    cache = out / CACHE_NAME
+    if not cache.exists():
+        raise SystemExit(f"missing {cache}\nrun code/compute_plf_topography.py first")
+    z = np.load(cache, allow_pickle=True)
+    channels = list(z["channels"])
+    per_subject = z["per_subject"].item()
+    # average the per-participant resultant lengths, one weight per participant
+    plf = {o: np.mean([np.abs(v[0][o]) for v in per_subject.values()], axis=0)
+           for o in LATENCIES_MS}
+    return channels, plf, len(per_subject), sum(v[1] for v in per_subject.values())
 
 
 def main():
-    st.apply()
-    root, out = st.parse_paths("Figure 3 - scalp topography of phase locking")
-    cache = out / "plf_topography_cache.npz"
+    root, out = st.parse_paths("Phase-locking topography feeding panel b of Figure 2")
+    cache = out / CACHE_NAME
 
-    if cache.exists():
-        print(f"loading {cache}")
-        z = np.load(cache, allow_pickle=True)
-        channels = list(z["channels"])
-        per_subject = z["per_subject"].item()
-    else:
+    if not cache.exists():
         channels, per_subject = collect(root)
         np.savez_compressed(cache, channels=np.array(channels),
                             per_subject=np.array(per_subject, dtype=object))
+        print(f"wrote {cache}")
 
-    # average the per-participant resultant vectors, then take their length
-    plf = {o: np.abs(np.mean([np.abs(v[0][o]) for v in per_subject.values()], axis=0))
-           for o in LATENCIES_MS}
-    n_trials = sum(v[1] for v in per_subject.values())
+    channels, plf, n_subj, n_trials = load(out)
 
-    with (out / "figure3_plf_topography.csv").open("w", encoding="utf-8", newline="") as f:
+    csv_path = out / "plf_topography.csv"
+    with csv_path.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
         w.writerow(["channel"] + [f"plf_{o}ms" for o in LATENCIES_MS])
         for i, ch in enumerate(channels):
             w.writerow([ch] + [f"{plf[o][i]:.4f}" for o in LATENCIES_MS])
+    print(f"wrote {csv_path}")
 
-    plot(out / "figure3_plf_topography", channels, plf, len(per_subject), n_trials)
-
-    print(f"\nparticipants {len(per_subject)}, stimuli {n_trials}")
+    print(f"\nparticipants {n_subj}, stimuli {n_trials}")
     for o in LATENCIES_MS:
         i = int(np.argmax(plf[o]))
         print(f"  {o:+5d} ms  max PLF {plf[o][i]:.3f} at {channels[i]:5s}  "

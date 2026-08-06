@@ -1,7 +1,7 @@
 # Code release for the manuscript: "An EEG dataset acquired during closed-loop phase-dependent visual stimulation"
 
 Scripts that regenerate the technical-validation outputs reported in the data
-descriptor: Tables 3, 4 and 5, and Figures 2 and 3. They read a released copy of
+descriptor: Tables 3, 4 and 5, and Figure 2. They read a released copy of
 the BIDS dataset and write to `derivatives/technical_validation/` inside it. None
 of them modify the released data.
 
@@ -30,13 +30,18 @@ Table 5 and Figure 2 both consume, so it has to run first.
 - `technical_validation_table4_timing_consistency.py` — latencies between the three triggers
 - `technical_validation_table5_phase_statistics.py` — circular statistics of the realised phase
 
-### 3. Figures
+### 3. Figure
 
-- `technical_validation_figure2_phase_targeting.py` — phase-targeting accuracy on the control channel
-- `technical_validation_figure3_plf_topography.py` — scalp topography of the same phase locking, at seven latencies around visual onset
-- `figure_style.py` — shared figure sizing, type and path handling; imported by the others, not run on its own
+`technical_validation_figure2_phase_targeting.py` draws all three panels of
+Figure 2 and writes them as SVG, PDF and PNG:
 
-Both figures are written as SVG, PDF and PNG.
+- **a** phase-targeting accuracy on the control channel, from the cache written by `compare_trigger_references.py`
+- **b** scalp topography of the same phase locking at seven latencies around visual onset, from the cache written by `compute_plf_topography.py`
+- **c** the phase-locking factor over time on the control channel
+
+`compute_plf_topography.py` is the slow half of panel b and is kept separate so
+it can be run once; `figure_style.py` holds the shared figure sizing, type and
+path handling and is imported rather than run.
 
 ## Usage examples
 
@@ -54,16 +59,16 @@ python compare_trigger_references.py --bids_root /path/to/BIDS_EEG_Closed-loop_V
 python technical_validation_figure2_phase_targeting.py --bids_root /path/to/dataset --out /tmp/figures
 ```
 
-Run order: `compare_trigger_references.py` first, then Table 5 and Figure 2.
-Tables 3 and 4 and Figure 3 are independent of it and of each other.
+Run order: the two extraction scripts first, then anything that reads their
+caches. Figure 2 needs both. Tables 3 and 4 are independent of everything else.
 
 ```
 python code/compare_trigger_references.py                       # about 10 min
+python code/compute_plf_topography.py                           # about 30 min
 python code/technical_validation_table3_trial_completeness.py
 python code/technical_validation_table4_timing_consistency.py
 python code/technical_validation_table5_phase_statistics.py
 python code/technical_validation_figure2_phase_targeting.py
-python code/technical_validation_figure3_plf_topography.py      # about 30 min
 ```
 
 ## Implementation details
@@ -106,7 +111,7 @@ the extracted phases are cached in
 file to force a full recomputation; with the cache present, Table 5 and Figure 2
 rerun in seconds.
 
-### Topography (`technical_validation_figure3_plf_topography.py`)
+### Topography (`compute_plf_topography.py`)
 
 Same preprocessing, but applied to all 63 scalp electrodes rather than one, and
 therefore about three times slower. For each stimulus the target phase assigned
@@ -116,7 +121,8 @@ around the cycle by design. Locking is summarised per electrode as the resultant
 length of those differences, computed within each participant and then averaged
 across participants so that participants with more trials do not dominate.
 Electrode positions come from MNE's `standard_1005` montage. Results are cached
-in `plf_topography_cache.npz` and also written as a CSV.
+in `plf_topography_cache.npz` and also written as `plf_topography.csv`; with the
+cache present, Figure 2 redraws in seconds.
 
 ### Circular statistics (`technical_validation_table5_phase_statistics.py`)
 
@@ -135,7 +141,7 @@ outlines, so the SVG and PDF remain editable.
 ## Requirements
 
 Python 3.10 or later. Tables 3 and 4 use only the standard library; the phase
-analysis and the figures additionally need the packages below.
+analysis and Figure 2 additionally need the packages below.
 
 ```
 pip install -r requirements.txt
@@ -148,8 +154,8 @@ pip install -r requirements.txt
 | `matplotlib` | 3.10.6 |
 | `mne` | 1.12.1 |
 
-The figures are typeset in Arial; if it is unavailable, matplotlib falls back to
-Helvetica and then to DejaVu Sans and they still render.
+Figure 2 is typeset in Arial; if it is unavailable, matplotlib falls back to
+Helvetica and then to DejaVu Sans and the figure still renders.
 
 ### Setting up an environment
 

@@ -6,6 +6,9 @@ resultant length is partly what the loop was built to produce, so this script
 asks the separate question of where else on the scalp the intended phase was
 present, and when. The answer is drawn as panel b of Figure 2.
 
+Latencies are relative to the photodiode onset from code/photodiode_onset.py,
+the same anchor the rest of Figure 2 uses.
+
 For every phase-dependent stimulus the phase of each scalp electrode is measured
 at a series of latencies around the photodiode-confirmed visual onset, and the
 target phase assigned to that trial is subtracted. Locking is then summarised per
@@ -32,6 +35,7 @@ import math
 from pathlib import Path
 
 import figure_style as st
+import photodiode_onset as pdo
 
 import mne
 import numpy as np
@@ -43,7 +47,8 @@ RECORDING_REFERENCE = "A1"
 RIGHT_EARLOBE = "X2"
 NON_SCALP = {"X2", "HEOG", "VEOG", "PhotoSensor"}
 
-# latencies shown, relative to photodiode-confirmed visual onset
+# latencies shown, relative to the photodiode onset (the analogue rise, not the
+# StimTrak marker B, whose offset moves with a hand-set threshold)
 LATENCIES_MS = (-300, -250, -200, -150, -100, -50, 0)
 REFERENCE_MS = -200.0
 
@@ -73,9 +78,11 @@ def analytic_all_channels(vhdr: Path):
     return raw.get_data(), scalp
 
 
-def collect(root: Path):
+def collect(root: Path, out: Path):
     chmap = {r["participant_id"]: r["phase_estimation_channel"]
              for r in read_tsv(root / "participants.tsv")}
+    analog = {stem: dict(zip(np.round(stim, 6), an))
+              for stem, (_, stim, _, an) in pdo.load(out).items()}
 
     per_subject = {}          # sub -> ({latency: complex mean}, trial count)
     channels = None
@@ -91,6 +98,7 @@ def collect(root: Path):
             if not vhdr.exists():
                 continue
             z, names = analytic_all_channels(vhdr)
+            an = analog.get(ev_path.name[: -len("_events.tsv")], {})
             if channels is None:
                 channels = names
             elif names != channels:
@@ -107,14 +115,8 @@ def collect(root: Path):
                 if cond not in set("123456"):
                     continue
                 t_stim = float(r["onset"])
-                t_b = None
-                for r2 in rows[i+1:i+6]:
-                    if r2["trial_type"] == "photosensor":
-                        d = float(r2["onset"]) - t_stim
-                        if 0 <= d <= 0.050:
-                            t_b = float(r2["onset"])
-                        break
-                if t_b is None:
+                t_b = an.get(round(t_stim, 6))
+                if t_b is None or math.isnan(t_b):
                     continue
 
                 ok = True
@@ -161,7 +163,7 @@ def main():
     cache = out / CACHE_NAME
 
     if not cache.exists():
-        channels, per_subject = collect(root)
+        channels, per_subject = collect(root, out)
         np.savez_compressed(cache, channels=np.array(channels),
                             per_subject=np.array(per_subject, dtype=object))
         print(f"wrote {cache}")

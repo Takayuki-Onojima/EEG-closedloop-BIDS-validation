@@ -3,6 +3,9 @@ import math
 from pathlib import Path
 
 import figure_style as st
+import photodiode_onset as pdo
+
+import numpy as np
 
 
 def to_float(value):
@@ -131,6 +134,61 @@ def build_timing_samples(root: Path):
     return a_to_stim_ms, stim_to_photo_ms_all, stim_to_photo_ms_chain, a_to_photo_ms, b_to_stim_ms
 
 
+def analog_rows(root: Path, out: Path):
+    """Rows comparing the StimTrak marker B with the photodiode signal itself.
+
+    B and the analogue onset are two readings of the same flash, so their
+    difference isolates what the hand-set StimTrak threshold contributed. Both
+    are restricted to the same attended trials the rows above use, so that every
+    row of the table refers to one trial set.
+    """
+    runs = pdo.load(out)
+    attended = {}
+    for ev_path in sorted(root.glob("sub-*/eeg/*_task-phasedep_run-*_events.tsv")):
+        stem = ev_path.name[: -len("_events.tsv")]
+        attended[stem] = {round(to_float(ev["onset"]), 6)
+                          for ev in read_tsv(ev_path)
+                          if ev.get("trial_type") == "visual_stimulus"
+                          and ev.get("attention_congruency") == "attended"}
+
+    stim_to_an, b_minus_an = [], []
+    an_sub, b_sub, diff_sub = {}, {}, {}
+    for stem, (sub, stim, bt, an) in runs.items():
+        keep = np.array([round(t, 6) in attended.get(stem, ()) for t in stim])
+        ok = keep & ~np.isnan(an) & ~np.isnan(bt)
+        d_an = (an[ok] - stim[ok]) * 1000.0
+        d_b = (bt[ok] - stim[ok]) * 1000.0
+        stim_to_an.extend(d_an)
+        b_minus_an.extend(d_b - d_an)
+        an_sub.setdefault(sub, []).extend(d_an)
+        b_sub.setdefault(sub, []).extend(d_b)
+        diff_sub.setdefault(sub, []).extend(d_b - d_an)
+
+    stim_to_an = np.asarray(stim_to_an)
+    b_minus_an = np.asarray(b_minus_an)
+    within = float(np.mean([np.std(v, ddof=1) for v in diff_sub.values()]))
+    spread = lambda d: float(np.ptp([np.mean(v) for v in d.values()]))
+
+    return [
+        {
+            "Comparison": "stimulation-PC trigger - photodiode onset",
+            "Definition": "Delay from the stimulation-PC trigger to the half-amplitude rise of the photodiode pulse on the analogue `PhotoSensor` channel",
+            "Mean delay (ms)": round(float(stim_to_an.mean()), 2),
+            "SD (ms)": round(float(stim_to_an.std(ddof=1)), 2),
+            "Number of trials": int(stim_to_an.size),
+            "Notes": f"read with one criterion in every session; participant means span {spread(an_sub):.2f} ms against {spread(b_sub):.2f} ms for `B`",
+        },
+        {
+            "Comparison": "photodiode onset - `B`",
+            "Definition": "Offset of the StimTrak marker from the photodiode rise it was derived from",
+            "Mean delay (ms)": round(float(b_minus_an.mean()), 2),
+            "SD (ms)": round(float(b_minus_an.std(ddof=1)), 2),
+            "Number of trials": int(b_minus_an.size),
+            "Notes": f"within participants a constant (SD {within:.2f} ms); participant means span {spread(diff_sub):.2f} ms, set by the StimTrak threshold",
+        },
+    ]
+
+
 def write_table4(
     out_csv: Path,
     out_md: Path,
@@ -139,6 +197,7 @@ def write_table4(
     stim_to_photo_ms_chain,
     a_to_photo_ms,
     b_to_stim_ms,
+    extra_rows=(),
 ):
     out_csv.parent.mkdir(parents=True, exist_ok=True)
 
@@ -149,30 +208,32 @@ def write_table4(
 
     rows = [
         {
-            "Comparison": "A - stimulus-PC trigger",
-            "Definition": "Delay from online phase-detection trigger (A) to stimulus-PC trigger output",
-            "Mean delay (ms)": round(m1, 4) if not math.isnan(m1) else "n/a",
-            "SD (ms)": round(s1, 4) if not math.isnan(s1) else "n/a",
+            "Comparison": "`A` - stimulation-PC trigger",
+            "Definition": "Delay from the online phase-detection trigger `A` to the stimulation-PC trigger output",
+            "Mean delay (ms)": round(m1, 2) if not math.isnan(m1) else "n/a",
+            "SD (ms)": round(s1, 2) if not math.isnan(s1) else "n/a",
             "Number of trials": n1,
-            "Notes": "A=realtime_trigger; measured on attended trials with valid A-B chain",
+            "Notes": "`A` = `realtime_trigger`; attended trials with a valid `A`",
         },
         {
-            "Comparison": "stimulus-PC trigger - photosensor (B)",
-            "Definition": "Delay from stimulus-PC trigger output to photosensor confirmation (B)",
-            "Mean delay (ms)": round(m2, 4) if not math.isnan(m2) else "n/a",
-            "SD (ms)": round(s2, 4) if not math.isnan(s2) else "n/a",
+            "Comparison": "stimulation-PC trigger - `B`",
+            "Definition": "Delay from the stimulation-PC trigger to the StimTrak marker `B`",
+            "Mean delay (ms)": round(m2, 2) if not math.isnan(m2) else "n/a",
+            "SD (ms)": round(s2, 2) if not math.isnan(s2) else "n/a",
             "Number of trials": n2,
-            "Notes": "B extracted from EEG PhotoSensor channel; includes attended trials with and without A trigger",
+            "Notes": "all attended trials, with and without a recorded `A`",
         },
         {
-            "Comparison": "A - photosensor (B) chain latency",
-            "Definition": "Total delay from online phase-detection trigger (A) to photosensor confirmation (B)",
-            "Mean delay (ms)": round(m3, 4) if not math.isnan(m3) else "n/a",
-            "SD (ms)": round(s3, 4) if not math.isnan(s3) else "n/a",
+            "Comparison": "`A` - `B` chain latency",
+            "Definition": "Total delay from `A` to `B`",
+            "Mean delay (ms)": round(m3, 2) if not math.isnan(m3) else "n/a",
+            "SD (ms)": round(s3, 2) if not math.isnan(s3) else "n/a",
             "Number of trials": n3,
-            "Notes": "Combined A->Stim->B latency on trials with valid A trigger (12,874 trials); closed-loop performance metric",
+            "Notes": "closed-loop performance metric; attended trials with a valid `A`",
         },
     ]
+
+    rows.extend(extra_rows)
 
     fieldnames = [
         "Comparison",
@@ -192,9 +253,13 @@ def write_table4(
     lines.append("")
     lines.append("| Comparison | Definition | Mean delay (ms) | SD (ms) | Number of trials | Notes |")
     lines.append("| --- | --- | --- | --- | --- | --- |")
+    def fmt(v):
+        return f"{v:.2f}" if isinstance(v, (int, float)) else str(v)
+
     for r in rows:
         lines.append(
-            f"| {r['Comparison']} | {r['Definition']} | {r['Mean delay (ms)']} | {r['SD (ms)']} | {r['Number of trials']} | {r['Notes']} |"
+            f"| {r['Comparison']} | {r['Definition']} | {fmt(r['Mean delay (ms)'])} | "
+            f"{fmt(r['SD (ms)'])} | {r['Number of trials']} | {r['Notes']} |"
         )
     out_md.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -219,6 +284,7 @@ def main():
         stim_to_photo_ms_chain,
         a_to_photo_ms,
         b_to_stim_ms,
+        extra_rows=analog_rows(root, out_dir),
     )
 
     print(f"Wrote: {csv_path}")

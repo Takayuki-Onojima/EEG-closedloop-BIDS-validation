@@ -32,8 +32,10 @@ REFERENCE_MS = -200.0
 REF_LABEL = {
     "A": "Speedgoat trigger (A)",
     "stim": "Stimulation-PC trigger",
-    "B": "Photosensor (B)",
+    "B": "StimTrak marker (B)",
+    "photo": "Photodiode onset (analogue)",
 }
+REFS = ("A", "stim", "B", "photo")
 
 
 def wrap(x):
@@ -57,7 +59,7 @@ def main():
     phases = z["phases"].item()
 
     rows = []
-    for ref in ("A", "stim", "B"):
+    for ref in REFS:
         for cond in range(1, 7):
             n, mean, R, sd, ci, rayZ = circ_stats(phases[ref][cond][REFERENCE_MS])
             rows.append({
@@ -95,7 +97,7 @@ def main():
     lines += ["", "Summary across the six conditions:", "",
               "| Timing anchor | Mean bias (deg) | SD of bias across conditions (deg) | "
               "Mean R | Mean circular SD (deg) |", "| --- | --- | --- | --- | --- |"]
-    for ref in ("A", "stim", "B"):
+    for ref in REFS:
         sub = [r for r in rows if r["reference_trigger"] == REF_LABEL[ref]]
         b = [r["bias_deg"] for r in sub]
         lines.append(f"| {REF_LABEL[ref]} | {np.mean(b):+.2f} | {np.std(b):.2f} | "
@@ -111,14 +113,19 @@ def main():
         "circular; circular SD is sqrt(-2 ln R) and the 95% CI is the large-sample approximation "
         "mean +/- 1.96 circ.SD / sqrt(n). All Rayleigh tests reject uniformity at p < 0.001. "
         "The bias differs between anchors only because of the trigger-to-trigger latencies "
-        "reported in Table 4; the dispersion is marginally larger for the photosensor anchor "
-        "because it additionally carries the trial-to-trial jitter of the display.",
+        "reported in Table 4, and the dispersion grows along the chain because each further step "
+        "adds its own jitter, the display's being the largest. The two display anchors read the "
+        "same physical flash: the photodiode onset is the half-amplitude rise of the analogue "
+        "PhotoSensor pulse, while B is the marker the StimTrak emitted when that rise crossed a "
+        "threshold set by hand once per session. B therefore carries a per-session constant "
+        "offset, which is why the photodiode onset is the anchor to use for absolute phase; B is "
+        "listed here so that analyses built on the marker can be corrected onto it.",
     ]
     (out / "table5_phase_statistics.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     print(f"wrote {out/'table5_phase_statistics.csv'}")
     print(f"wrote {out/'table5_phase_statistics.md'}")
-    for ref in ("A", "stim", "B"):
+    for ref in REFS:
         sub = [r for r in rows if r["reference_trigger"] == REF_LABEL[ref]]
         b = [r["bias_deg"] for r in sub]
         print(f"  {REF_LABEL[ref]:24s} bias {np.mean(b):+6.2f}  "

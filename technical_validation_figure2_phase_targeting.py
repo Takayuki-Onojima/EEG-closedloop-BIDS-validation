@@ -1,9 +1,12 @@
 """Figure 2 - phase-targeting accuracy of the closed-loop stimulation.
 
-Anchored on the photosensor (B), the measured luminance change on the display,
-which is the dataset's primary external reference for actual visual onset. Panel
-a additionally overlays the stimulation-PC anchor. The Speedgoat trigger A is
-reported numerically in Table 5 and is deliberately not repeated here.
+Anchored on the photodiode onset, the measured luminance change on the display,
+which is the dataset's primary external reference for actual visual onset. It is
+taken from the analogue PhotoSensor channel rather than from the StimTrak marker
+B, because B fires at a threshold that was set by hand once per session and so
+carries a per-session offset of up to 3.2 ms. Panel a additionally overlays the
+stimulation-PC anchor; B and the Speedgoat trigger A are reported numerically in
+Table 5 and are deliberately not repeated here.
 
 Panels
   a  circular histograms of the phase 200 ms before visual onset, one per
@@ -41,11 +44,13 @@ REFERENCE_MS = -200.0
 
 # Panel a overlays two anchors. The online delay compensation was applied to the
 # presentation command, so `stim` shows what the controller achieved; the display
-# then takes a further 6.3 ms to change luminance, so `B` shows what the eye
-# actually received. Panels b and c use B, the physical event.
-ANCHOR = "B"
+# then takes a further 6.8 ms to change luminance, so `photo` shows what the eye
+# actually received. `photo` is the analogue photodiode rise rather than the
+# StimTrak marker B, whose offset moves with a threshold set by hand once per
+# session; B is reported in Table 5 instead. Panels b and c use `photo`.
+ANCHOR = "photo"
 OVERLAY = (("stim", "#4C78A8", "stimulation-PC trigger"),
-           ("B", "#E45756", "photosensor (B)"))
+           ("photo", "#E45756", "photodiode onset"))
 
 TOPO_CMAP = "RdBu_r"          # red high, blue low
 TOPO_FS = 500                 # rate the cached analytic signals were computed at
@@ -117,7 +122,7 @@ def panel_a(fig, gs, phases):
         ax.grid(lw=0.4, color="#CCCCCC")
         ax.spines["polar"].set_linewidth(0.6)
         ax.set_title(f"target {label(cond)}\n"
-                     f"bias {biases[0]:+.1f}° (stim), {biases[1]:+.1f}° (B)",
+                     f"bias {biases[0]:+.1f}° (stim), {biases[1]:+.1f}° (photodiode)",
                      fontsize=st.FS_ANNOT, pad=6)
     return axes
 
@@ -138,7 +143,7 @@ def panel_b(fig, gs, channels, plf):
                                      contours=4, sensors=True, outlines="head")
         weight = "bold" if o == REFERENCE_MS else "normal"
         ax.set_title(f"{o:+d} ms", fontsize=st.FS_ANNOT, fontweight=weight, pad=3)
-    axes[0].set_ylabel("relative to B", fontsize=st.FS_TICK, labelpad=1)
+    axes[0].set_ylabel("relative to visual onset", fontsize=st.FS_TICK, labelpad=1)
 
     # the colourbar column spans the full row height, but the topomaps are square
     # and so occupy only part of it; match the colourbar to their drawn extent
@@ -160,7 +165,7 @@ def panel_c(fig, gs, phases, offsets):
         ax.plot(offsets, r, lw=0.9, label=f"target {label(cond)}")
     ax.axvline(REFERENCE_MS, color="black", ls="--", lw=0.9)
     ax.axvline(0, color="grey", ls="--", lw=0.9)
-    ax.set_xlabel("time relative to visual onset, anchored on the photosensor B (ms)")
+    ax.set_xlabel("time relative to the photodiode onset (ms)")
     ax.set_ylabel("phase-locking factor")
     ax.set_xlim(offsets[0], offsets[-1])
     ax.set_ylim(0, 1.0)
@@ -168,7 +173,7 @@ def panel_c(fig, gs, phases, offsets):
               bbox_to_anchor=(0.998, 0.995), columnspacing=1.0,
               handlelength=1.3, labelspacing=0.35, borderaxespad=0.2)
     ax.text(REFERENCE_MS, 1.02, "prestimulus target", ha="center", fontsize=st.FS_TICK)
-    ax.text(0, 1.02, "visual onset (B)", ha="center", fontsize=st.FS_TICK, color="grey")
+    ax.text(0, 1.02, "visual onset", ha="center", fontsize=st.FS_TICK, color="grey")
     for sp in ("top", "right"):
         ax.spines[sp].set_visible(False)
     return ax
@@ -229,7 +234,7 @@ def main():
     plot(out / "figure2_phase_targeting_accuracy.png", phases, offsets, channels, plf)
     write_summary(out / "figure2_phase_targeting_summary.csv", phases)
 
-    print(f"anchor: photosensor (B), {REFERENCE_MS:.0f} ms")
+    print(f"anchor: {ANCHOR}, {REFERENCE_MS:.0f} ms")
     for c in range(1, 7):
         a = np.asarray(phases[ANCHOR][c][REFERENCE_MS], float)
         print(f"  target {label(c):>5s}: n={a.size:5d}  R={rlen(a):.3f}  "

@@ -1,14 +1,24 @@
-"""Compare phase-targeting accuracy against each of the three available triggers.
+"""Compare phase-targeting accuracy against each of the four available anchors.
 
-Three timestamps exist per stimulus:
-  A    - realtime_trigger, emitted by the Speedgoat when the target phase was detected
-  stim - the stimulation PC's own trigger, i.e. the presentation command
-  B    - photosensor, the actual luminance change on the display
+Four timestamps exist per stimulus:
+  A     - realtime_trigger, emitted by the Speedgoat when the target phase was detected
+  stim  - the stimulation PC's own trigger, i.e. the presentation command
+  B     - the StimTrak marker, emitted when the photodiode signal crossed threshold
+  photo - the same rise measured from the analogue PhotoSensor channel itself, at
+          half the pulse amplitude, by code/photodiode_onset.py
 
 The intended -200 ms prestimulus reference can be anchored to any of them, and
-the choice shifts the realised phase by the inter-trigger latency (median
-A->stim 1.0 ms, stim->B 6.2 ms). This script measures the resulting phase
-distribution for all three so the correct anchor can be chosen from the data.
+the choice shifts the realised phase by the inter-trigger latency. This script
+measures the resulting phase distribution for all four so the anchor can be
+chosen from the data.
+
+B and photo track the same physical flash and carry the same trial-to-trial
+jitter: B minus photo has a within-participant SD of only 0.06 ms, so the marker
+adds no noise of its own. But B fires wherever a hand-set threshold happened to
+sit on the rise, and participant means of B span 3.00 ms where those of photo
+span 0.47 ms. photo is therefore the anchor used for absolute phase, and B is
+retained here so that a reader who prefers the marker can read off the
+correction.
 
 Preprocessing reproduces the online control pipeline and is carried out with
 MNE-Python, so that channel names, units and the reference scheme are handled by
@@ -43,6 +53,7 @@ import math
 from pathlib import Path
 
 import figure_style as st
+import photodiode_onset as pd
 
 import mne
 import numpy as np
@@ -55,7 +66,7 @@ BAND = (6.0, 8.0)
 TRANS_BW = 1.0
 REFERENCE_MS = -200.0
 OFFSETS_MS = np.arange(-400, 101, 5)
-REFS = ("A", "stim", "B")
+REFS = ("A", "stim", "B", "photo")
 RECORDING_REFERENCE = "A1"      # left earlobe, not stored as a channel
 RIGHT_EARLOBE = "X2"
 
@@ -96,9 +107,13 @@ def analytic_at(z, t_s):
     return (1.0 - f) * z[i] + f * z[i + 1]
 
 
-def collect(root: Path):
+def collect(root: Path, out: Path):
     chmap = {r["participant_id"]: r["phase_estimation_channel"]
              for r in read_tsv(root / "participants.tsv")}
+    # analogue onsets, keyed per run by the stimulation-PC trigger time they
+    # belong to, so they can be looked up while walking the event file
+    analog = {stem: dict(zip(np.round(stim, 6), an))
+              for stem, (_, stim, _, an) in pd.load(out).items()}
 
     # phases[ref][cond][offset] -> list
     phases = {ref: {c: {o: [] for o in OFFSETS_MS} for c in range(1, 7)} for ref in REFS}
@@ -115,6 +130,7 @@ def collect(root: Path):
             continue
 
         z = analytic_signal(vhdr, ch)
+        an = analog.get(stem, {})
 
         rows = read_tsv(ev_path)
         last_a = None
@@ -136,7 +152,12 @@ def collect(root: Path):
                         t_b = float(r2["onset"])
                     break
 
-            for ref, t0 in (("A", last_a), ("stim", t_stim), ("B", t_b)):
+            t_photo = an.get(round(t_stim, 6))
+            if t_photo is not None and math.isnan(t_photo):
+                t_photo = None
+
+            for ref, t0 in (("A", last_a), ("stim", t_stim), ("B", t_b),
+                            ("photo", t_photo)):
                 if t0 is None:
                     continue
                 counts[ref] += 1
@@ -172,7 +193,7 @@ def main():
         phases = z["phases"].item()
         counts = z["counts"].item()
     else:
-        phases, counts = collect(root)
+        phases, counts = collect(root, out)
         np.savez_compressed(cache, phases=np.array(phases, dtype=object),
                             counts=np.array(counts, dtype=object),
                             offsets=OFFSETS_MS)

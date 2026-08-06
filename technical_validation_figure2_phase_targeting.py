@@ -101,13 +101,13 @@ def panel_a(fig, gs, phases):
             ax.bar(centres, counts, width=widths, color=colour, alpha=0.45,
                    edgecolor="none", zorder=1)
 
-        # the stim mean lands on the target by design and would hide it if the two
-        # were drawn the same width. Draw the target wider and underneath, so it
-        # reads as a black casing around the mean wherever they coincide; running
-        # it past the rim instead would collide with the angular tick labels.
-        ax.plot([target, target], [0, top], "--", color="black", lw=2.0, zorder=3)
+        # the stim mean lands on the target by design, so one of the two has to be
+        # drawn over the other. The target goes on top: it is dashed, so the mean
+        # underneath still shows through the gaps, whereas the reverse would hide
+        # the target completely.
         for _, _, _, colour, m in hists:
-            ax.plot([m, m], [0, top], "-", color=colour, lw=1.0, zorder=6)
+            ax.plot([m, m], [0, top], "-", color=colour, lw=1.2, zorder=5)
+        ax.plot([target, target], [0, top], "--", color="black", lw=1.0, zorder=7)
 
         ax.set_theta_zero_location("E")
         ax.set_theta_direction(1)          # counter-clockwise
@@ -193,8 +193,8 @@ def plot(path: Path, phases, offsets, channels, plf):
     # clear of both the 270 deg labels hanging below the polar block and the
     # latency titles above the topographies
     spacer = outer[1].get_position(fig)
-    handles = [plt.Line2D([], [], color="black", ls="--", lw=2.0, label="target phase")]
-    handles += [plt.Line2D([], [], color=c, lw=1.0, label=f"realised, anchored on {name}")
+    handles = [plt.Line2D([], [], color="black", ls="--", lw=1.0, label="target phase")]
+    handles += [plt.Line2D([], [], color=c, lw=1.2, label=f"realised, anchored on {name}")
                 for _, c, name in OVERLAY]
     fig.legend(handles=handles, loc="center",
                bbox_to_anchor=(0.5, spacer.y0 + spacer.height / 2),

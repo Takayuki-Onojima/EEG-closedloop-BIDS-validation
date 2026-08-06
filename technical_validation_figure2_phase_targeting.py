@@ -1,13 +1,17 @@
 """Figure 2 - phase-targeting accuracy of the closed-loop stimulation.
 
 Anchored on the photosensor (B), the measured luminance change on the display,
-which is the dataset's primary external reference for actual visual onset. The
-comparison against the two upstream triggers (Speedgoat A, stimulation PC) is
+which is the dataset's primary external reference for actual visual onset. Panel
+a additionally overlays the stimulation-PC anchor. The Speedgoat trigger A is
 reported numerically in Table 5 and is deliberately not repeated here.
 
 Panels
   a  circular histograms of the phase 200 ms before visual onset, one per
-     target phase, with the target and the realised circular mean drawn on top
+     target phase, with the target drawn on top and the realised circular mean
+     shown for two anchors at once. The online delay compensation was applied
+     to the presentation command, so the stimulation-PC anchor shows what the
+     controller achieved and the photosensor anchor what the eye received; the
+     gap between the two is the display latency, and nothing else.
   b  scalp topography of the same phase locking, at seven latencies around
      visual onset, showing that it is not confined to the control channel
   c  phase-locking factor over time on the control channel, one curve per
@@ -34,9 +38,15 @@ import figure_style as st
 
 TARGET = {1: -math.pi/3, 2: 0.0, 3: math.pi/3, 4: 2*math.pi/3, 5: math.pi, 6: 4*math.pi/3}
 REFERENCE_MS = -200.0
+
+# Panel a overlays two anchors. The online delay compensation was applied to the
+# presentation command, so `stim` shows what the controller achieved; the display
+# then takes a further 6.3 ms to change luminance, so `B` shows what the eye
+# actually received. Panels b and c use B, the physical event.
 ANCHOR = "B"
-HIST_COLOUR = "#9EBCDA"
-MEAN_COLOUR = "#E45756"
+OVERLAY = (("stim", "#4C78A8", "stimulation-PC trigger"),
+           ("B", "#E45756", "photosensor (B)"))
+
 TOPO_CMAP = "RdBu_r"          # red high, blue low
 TOPO_FS = 500                 # rate the cached analytic signals were computed at
 
@@ -65,32 +75,45 @@ def load(cache: Path):
 
 
 def panel_a(fig, gs, phases):
-    """Realised phase at the prestimulus reference, one polar panel per target."""
+    """Realised phase at the prestimulus reference, one polar panel per target.
+
+    Both anchors are drawn on the same axes. They are the same trials measured
+    6.3 ms apart, so the two distributions differ by a rigid rotation of about
+    16 deg at 7 Hz and nothing else; overlaying them shows the display latency
+    directly, as the gap between the two mean vectors.
+    """
     axes = []
     for k, cond in enumerate(range(1, 7)):
         ax = fig.add_subplot(gs[k // 3, (k % 3)*2:(k % 3)*2 + 2], projection="polar")
         axes.append(ax)
-        a = np.asarray(phases[ANCHOR][cond][REFERENCE_MS], float)
         target = TARGET[cond]
 
-        counts, edges = np.histogram(a, bins=36, range=(-math.pi, math.pi))
-        ax.bar(edges[:-1] + np.diff(edges)/2, counts, width=np.diff(edges),
-               color=HIST_COLOUR, alpha=0.85, edgecolor="none", zorder=1)
-        top = counts.max() if counts.size and counts.max() > 0 else 1
+        # drawn as closed profiles rather than bars, which stay legible overlaid
+        profiles, biases = [], []
+        for ref, colour, _ in OVERLAY:
+            a = np.asarray(phases[ref][cond][REFERENCE_MS], float)
+            counts, edges = np.histogram(a, bins=36, range=(-math.pi, math.pi))
+            centres = edges[:-1] + np.diff(edges) / 2
+            profiles.append((np.append(centres, centres[0]),
+                             np.append(counts, counts[0]), colour, circmean(a)))
+            biases.append(math.degrees(wrap(circmean(a) - target)))
 
-        m = circmean(a)
+        top = max(p[1].max() for p in profiles) or 1
         ax.plot([target, target], [0, top], "--", color="black", lw=1.0, zorder=5)
-        ax.plot([m, m], [0, top], "-", color=MEAN_COLOUR, lw=1.2, zorder=6)
+        for theta, counts, colour, m in profiles:
+            ax.fill(theta, counts, color=colour, alpha=0.16, edgecolor="none", zorder=1)
+            ax.plot(theta, counts, color=colour, lw=0.8, zorder=2)
+            ax.plot([m, m], [0, top], "-", color=colour, lw=1.2, zorder=6)
 
         ax.set_theta_zero_location("E")
         ax.set_theta_direction(1)          # counter-clockwise
+        ax.set_ylim(0, top)
         ax.set_yticklabels([])
         ax.tick_params(pad=0.5)
         ax.grid(lw=0.4, color="#CCCCCC")
         ax.spines["polar"].set_linewidth(0.6)
         ax.set_title(f"target {label(cond)}\n"
-                     f"n = {a.size}, R = {rlen(a):.2f}, "
-                     f"bias = {math.degrees(wrap(m - target)):+.1f}°",
+                     f"bias {biases[0]:+.1f}° (stim), {biases[1]:+.1f}° (B)",
                      fontsize=st.FS_ANNOT, pad=6)
     return axes
 
@@ -165,12 +188,12 @@ def plot(path: Path, phases, offsets, channels, plf):
     # clear of both the 270 deg labels hanging below the polar block and the
     # latency titles above the topographies
     spacer = outer[1].get_position(fig)
-    handles = [plt.Line2D([], [], color="black", ls="--", lw=1.0, label="target phase"),
-               plt.Line2D([], [], color=MEAN_COLOUR, lw=1.2,
-                          label="realised circular mean")]
+    handles = [plt.Line2D([], [], color="black", ls="--", lw=1.0, label="target phase")]
+    handles += [plt.Line2D([], [], color=c, lw=1.2, label=f"realised, anchored on {name}")
+                for _, c, name in OVERLAY]
     fig.legend(handles=handles, loc="center",
                bbox_to_anchor=(0.5, spacer.y0 + spacer.height / 2),
-               ncol=2, fontsize=st.FS_LEGEND, frameon=False)
+               ncol=3, fontsize=st.FS_LEGEND, frameon=False, columnspacing=1.8)
 
     st.panel_letter(fig, 0.010, 0.995, "a")
     st.panel_letter(fig, 0.010, max(ax.get_position().y1 for ax in axes_b) + 0.030, "b")

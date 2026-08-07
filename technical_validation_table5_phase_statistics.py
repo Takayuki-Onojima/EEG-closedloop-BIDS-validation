@@ -80,21 +80,31 @@ def main():
         w.writeheader()
         w.writerows(rows)
 
+    # Per-condition detail is given for the anchor the article uses for absolute
+    # phase. The other three differ from it by a constant, so listing them
+    # condition by condition would repeat the same offset six times; their
+    # summary rows carry all the information they add.
+    PRIMARY = "photo"
     lines = [
         "## Table 5. Circular statistics of the realised stimulation phase "
         "in the phase-dependent sessions",
         "",
-        "| Timing anchor | Condition | Target (deg) | n | Circular mean (deg) | "
+        f"Realised phase by condition, anchored on the {REF_LABEL[PRIMARY].lower()}:",
+        "",
+        "| Condition | Target (deg) | n | Circular mean (deg) | "
         "Bias from target (deg) | R | Circular SD (deg) | 95% CI (+/- deg) | Rayleigh Z |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for r in rows:
+        if r["reference_trigger"] != REF_LABEL[PRIMARY]:
+            continue
         lines.append(
-            f"| {r['reference_trigger']} | {r['condition']} | {r['target_deg']:.1f} | {r['n']} | "
+            f"| {r['condition']} | {r['target_deg']:.1f} | {r['n']} | "
             f"{r['circular_mean_deg']:.2f} | {r['bias_deg']:+.2f} | {r['resultant_length_R']:.4f} | "
             f"{r['circular_sd_deg']:.2f} | {r['ci95_halfwidth_deg']:.2f} | {r['rayleigh_Z']:.1f} |")
 
-    lines += ["", "Summary across the six conditions:", "",
+    lines += ["", "The same measurement anchored on each of the four available timestamps, "
+              "summarised across the six conditions:", "",
               "| Timing anchor | Mean bias (deg) | SD of bias across conditions (deg) | "
               "Mean R | Mean circular SD (deg) |", "| --- | --- | --- | --- | --- |"]
     for ref in REFS:
@@ -109,8 +119,14 @@ def main():
         "Phase was measured at the intended prestimulus reference, 200 ms before the anchoring "
         "trigger, on the participant-specific channel used for online phase estimation "
         "(`phase_estimation_channel` in `participants.tsv`), referenced to the average of the two "
-        "earlobes and band-pass filtered at 6-8 Hz as in the online pipeline. Statistics are "
+        "earlobes as in the online system, then band-pass filtered offline between 6 and 8 Hz "
+        "with a zero-phase FIR filter. That filter is not the one the controller used online: "
+        "the online filter had to be causal and short, and the offline one is designed for the "
+        "6-8 Hz band itself. Statistics are "
         "circular; circular SD is sqrt(-2 ln R) and the 95% CI is the large-sample approximation "
+        "mean +/- 1.96 circ.SD / sqrt(n). The per-condition rows for the remaining three "
+        "anchors are omitted because they differ from those above by a single constant, and "
+        "are included in the accompanying CSV. "
         "mean +/- 1.96 circ.SD / sqrt(n). All Rayleigh tests reject uniformity at p < 0.001. "
         "The bias differs between anchors only because of the trigger-to-trigger latencies "
         "reported in Table 4, and the dispersion grows along the chain because each further step "

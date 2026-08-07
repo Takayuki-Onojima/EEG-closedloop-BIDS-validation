@@ -103,16 +103,19 @@ def main():
             f"{r['circular_mean_deg']:.2f} | {r['bias_deg']:+.2f} | {r['resultant_length_R']:.4f} | "
             f"{r['circular_sd_deg']:.2f} | {r['ci95_halfwidth_deg']:.2f} | {r['rayleigh_Z']:.1f} |")
 
-    lines += ["", "The same measurement anchored on each of the four available timestamps, "
-              "summarised across the six conditions:", "",
-              "| Timing anchor | Mean bias (deg) | SD of bias across conditions (deg) | "
-              "Mean R | Mean circular SD (deg) |", "| --- | --- | --- | --- | --- |"]
+    # The other three anchors are not tabulated. Their mean bias differs from the
+    # one above by exactly the inter-trigger latencies already given in Table 4,
+    # and their R and circular SD agree with it to the third decimal, so a second
+    # table would restate Table 4 in different units. The values are given in the
+    # note below, and every anchor and condition is in the CSV.
+    summary = {}
     for ref in REFS:
         sub = [r for r in rows if r["reference_trigger"] == REF_LABEL[ref]]
         b = [r["bias_deg"] for r in sub]
-        lines.append(f"| {REF_LABEL[ref]} | {np.mean(b):+.2f} | {np.std(b):.2f} | "
-                     f"{np.mean([r['resultant_length_R'] for r in sub]):.4f} | "
-                     f"{np.mean([r['circular_sd_deg'] for r in sub]):.2f} |")
+        summary[ref] = (np.mean(b), np.std(b),
+                        np.mean([r["resultant_length_R"] for r in sub]),
+                        np.mean([r["circular_sd_deg"] for r in sub]))
+    Rs = [v[2] for v in summary.values()]
 
     lines += [
         "",
@@ -120,22 +123,24 @@ def main():
         "trigger, on the participant-specific channel used for online phase estimation "
         "(`phase_estimation_channel` in `participants.tsv`), referenced to the average of the two "
         "earlobes as in the online system, then band-pass filtered offline between 6 and 8 Hz "
-        "with a zero-phase FIR filter. That filter is not the one the controller used online: "
-        "the online filter had to be causal and short, and the offline one is designed for the "
-        "6-8 Hz band itself. Statistics are "
-        "circular; circular SD is sqrt(-2 ln R) and the 95% CI is the large-sample approximation "
-        "mean +/- 1.96 circ.SD / sqrt(n). The per-condition rows for the remaining three "
-        "anchors are omitted because they differ from those above by a single constant, and "
-        "are included in the accompanying CSV. "
-        "mean +/- 1.96 circ.SD / sqrt(n). All Rayleigh tests reject uniformity at p < 0.001. "
-        "The bias differs between anchors only because of the trigger-to-trigger latencies "
-        "reported in Table 4, and the dispersion grows along the chain because each further step "
-        "adds its own jitter, the display's being the largest. The two display anchors read the "
-        "same physical flash: the photodiode onset is the half-amplitude rise of the analogue "
-        "PhotoSensor pulse, while B is the marker the StimTrak emitted when that rise crossed a "
-        "threshold set by hand once per session. B therefore carries a per-session constant "
-        "offset, which is why the photodiode onset is the anchor to use for absolute phase; B is "
-        "listed here so that analyses built on the marker can be corrected onto it.",
+        "with a zero-phase FIR filter. That filter is not the one the controller used online: the "
+        "online filter had to be causal and short, and the offline one is designed for the 6-8 Hz "
+        "band itself. Statistics are circular; circular SD is sqrt(-2 ln R) and the 95% CI is the "
+        "large-sample approximation mean +/- 1.96 circ.SD / sqrt(n). All Rayleigh tests reject "
+        "uniformity at p < 0.001.",
+        "",
+        "The same measurement can be anchored on any of the four timestamps available for each "
+        f"stimulus. Doing so changes the mean bias to {summary['A'][0]:+.2f} deg for the Speedgoat "
+        f"trigger, {summary['stim'][0]:+.2f} deg for the stimulation-PC trigger and "
+        f"{summary['B'][0]:+.2f} deg for the StimTrak marker, differences that are exactly the "
+        "inter-trigger latencies of Table 4 expressed as phase, while leaving the mean resultant "
+        f"length between {min(Rs):.3f} and {max(Rs):.3f} throughout. Per-condition values for all "
+        "four anchors are in the accompanying CSV. The two display anchors read the same physical "
+        "flash: the photodiode onset is the half-amplitude rise of the analogue PhotoSensor pulse, "
+        "while B is the marker the StimTrak emitted when that rise crossed a threshold set by hand "
+        "once per session. B therefore carries a per-session constant offset, which is why the "
+        "photodiode onset is the anchor used here for absolute phase; the correction onto it is "
+        "given in Table 4.",
     ]
     (out / "table5_phase_statistics.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 

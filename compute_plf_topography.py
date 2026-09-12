@@ -1,6 +1,6 @@
 """Scalp topography of phase locking to the intended target phase.
 
-Panel a of Figure 2 shows how well the realised phase matched its target on the
+Panel a of Figure 2 shows how well the realized phase matched its target on the
 one channel each participant's controller was driven from. On that channel a high
 resultant length is partly what the loop was built to produce, so this script
 asks the separate question of where else on the scalp the intended phase was
@@ -10,19 +10,34 @@ Latencies are relative to the photodiode onset from code/photodiode_onset.py,
 the same anchor the rest of Figure 2 uses.
 
 For every phase-dependent stimulus the phase of each scalp electrode is measured
-at a series of latencies around the photodiode-confirmed visual onset, and the
-target phase assigned to that trial is subtracted. Locking is then summarised per
-electrode as the resultant length of those differences,
+at a series of latencies around the photodiode-confirmed visual onset. Locking is
+summarized per electrode as the resultant length within each target condition,
+averaged over the six conditions,
 
-    PLF = | mean over trials of exp(i * (phase - target)) |
+    PLF = mean over conditions of | mean over trials of exp(i * phase) |
 
-so a value near 1 means the electrode carried the intended phase on every trial
-and a value near 0 means it carried no consistent relation to it. Subtracting the
-target is what makes the six conditions poolable: without it they would cancel,
-since they are spread evenly around the cycle by design.
+The conditions are kept separate rather than pooled because they are spread
+evenly around the cycle by design and would otherwise cancel. Pooling them after
+subtracting each trial's own target is the alternative; it measures the same
+quantity but confounds the within-condition spread with any disagreement between
+the conditions' biases, and it needs the subtraction to be explained. Keeping
+them separate measures only the spread, which is what panel b asks about; the
+biases are the subject of Table 5.
 
-PLF is computed within each participant and then averaged across participants, so
-that participants with slightly more trials do not dominate.
+Within a condition the trials of all participants are pooled before the resultant
+length is taken. A resultant length is biased upwards at small N, by roughly
+sqrt(rho^2 + (1 - rho^2)/N), and averaging per-participant values would remove
+only the variance of that bias, not the bias itself. Pooling keeps N as large as
+the data allow, which matters most where locking is weak. Trial counts are near
+equal between participants, so pooling gives none of them undue weight. It also
+makes this panel and panel c the same measurement, differing only in which
+channel each reads: panel c follows the control channel, which is not the same
+electrode in every participant, whereas the maps here read one fixed electrode
+across all of them, so the two do not coincide at any single site.
+
+A value near 1 means the electrode held a fixed relation to the intended phase on
+every trial, not that the relation was zero: a constant offset leaves the
+resultant length unchanged. A value near 0 means no consistent relation.
 
 Preprocessing matches code/compare_trigger_references.py: linked-earlobe
 reference, 500 Hz, 6-8 Hz zero-phase band-pass, Hilbert transform. Applying it to
@@ -47,13 +62,13 @@ RECORDING_REFERENCE = "A1"
 RIGHT_EARLOBE = "X2"
 NON_SCALP = {"X2", "HEOG", "VEOG", "PhotoSensor"}
 
-# latencies shown, relative to the photodiode onset (the analogue rise, not the
+# latencies shown, relative to the photodiode onset (the analog rise, not the
 # StimTrak marker B, whose offset moves with a hand-set threshold)
 LATENCIES_MS = (-300, -250, -200, -150, -100, -50, 0)
-REFERENCE_MS = -200.0
 
-TARGET = {1: -math.pi/3, 2: 0.0, 3: math.pi/3, 4: 2*math.pi/3, 5: math.pi, 6: 4*math.pi/3}
-
+# The target phases themselves are not needed here: the resultant length within a
+# condition does not depend on where that condition's target sits, because
+# subtracting a constant only rotates the trials and leaves the modulus alone.
 CACHE_NAME = "plf_topography_cache.npz"
 
 
@@ -90,7 +105,8 @@ def collect(root: Path, out: Path):
     for sub in sorted({p.name for p in root.glob("sub-*") if p.is_dir()}):
         if chmap.get(sub, "n/a") == "n/a":
             continue
-        acc = {o: None for o in LATENCIES_MS}
+        acc = {}          # (latency, condition) -> complex sum over that subject's trials
+        n_cond = {}       # condition -> trial count
         n_trials = 0
 
         for ev_path in sorted(root.glob(f"{sub}/eeg/*_task-phasedep_run-*_events.tsv")):
@@ -103,10 +119,6 @@ def collect(root: Path, out: Path):
                 channels = names
             elif names != channels:
                 raise SystemExit(f"{vhdr.name}: channel order differs from earlier runs")
-            for o in LATENCIES_MS:
-                if acc[o] is None:
-                    acc[o] = np.zeros(len(names), complex)
-
             rows = read_tsv(ev_path)
             for i, r in enumerate(rows):
                 if r["trial_type"] != "visual_stimulus":
@@ -132,30 +144,52 @@ def collect(root: Path, out: Path):
                 if not ok:
                     continue
 
-                target = TARGET[int(cond)]
+                c = int(cond)
                 for o in LATENCIES_MS:
-                    acc[o] += np.exp(1j * (np.angle(sample[o]) - target))
+                    key = (o, c)
+                    if key not in acc:
+                        acc[key] = np.zeros(len(names), complex)
+                    acc[key] += np.exp(1j * np.angle(sample[o]))
+                n_cond[c] = n_cond.get(c, 0) + 1
                 n_trials += 1
             print(f"  {vhdr.stem}", flush=True)
 
         if n_trials:
-            per_subject[sub] = ({o: acc[o] / n_trials for o in LATENCIES_MS}, n_trials)
+            # the complex sums and the trial counts, not a resultant length: the
+            # sums can be added across participants, a resultant length cannot
+            per_subject[sub] = (acc, dict(n_cond))
 
     return channels, per_subject
 
 
 def load(out: Path):
-    """Channels, the grand-average PLF per latency, and the pooled counts."""
+    """Channels, the PLF per latency, the participant count and the trial count.
+
+    The trials of every participant are pooled within each condition before the
+    resultant length is taken, and the six conditions are then averaged. Pooling
+    first is what keeps N large: a resultant length is biased upwards by roughly
+    sqrt(rho^2 + (1 - rho^2)/N), and averaging per-participant values would not
+    remove that bias, only its variance. Trial counts are near equal between
+    participants, so pooling gives no participant undue weight.
+    """
     cache = out / CACHE_NAME
     if not cache.exists():
         raise SystemExit(f"missing {cache}\nrun code/compute_plf_topography.py first")
     z = np.load(cache, allow_pickle=True)
     channels = list(z["channels"])
     per_subject = z["per_subject"].item()
-    # average the per-participant resultant lengths, one weight per participant
-    plf = {o: np.mean([np.abs(v[0][o]) for v in per_subject.values()], axis=0)
+
+    conds = sorted({c for _, n in per_subject.values() for c in n})
+    total = {}
+    n_cond = {c: 0 for c in conds}
+    for sums, counts in per_subject.values():
+        for key, v in sums.items():
+            total[key] = total.get(key, 0) + v
+        for c, m in counts.items():
+            n_cond[c] += m
+    plf = {o: np.mean([np.abs(total[(o, c)] / n_cond[c]) for c in conds], axis=0)
            for o in LATENCIES_MS}
-    return channels, plf, len(per_subject), sum(v[1] for v in per_subject.values())
+    return channels, plf, len(per_subject), sum(n_cond.values())
 
 
 def main():

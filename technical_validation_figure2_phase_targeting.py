@@ -2,15 +2,15 @@
 
 Anchored on the photodiode onset, the measured luminance change on the display,
 which is the dataset's primary external reference for actual visual onset. It is
-taken from the analogue PhotoSensor channel rather than from the StimTrak marker
+taken from the analog PhotoSensor channel rather than from the StimTrak marker
 B, because B fires at a threshold that was set by hand once per session and so
-carries a per-session offset of up to 3.2 ms. Panel a additionally overlays the
+carries a per-session offset. Panel a additionally overlays the
 stimulation-PC anchor; B and the Speedgoat trigger A are reported numerically in
 Table 5 and are deliberately not repeated here.
 
 Panels
   a  circular histograms of the phase 200 ms before visual onset, one per
-     target phase, with the target drawn on top and the realised circular mean
+     target phase, with the target drawn on top and the realized circular mean
      shown for two anchors at once. The online delay compensation was applied
      to the presentation command, so the stimulation-PC anchor shows what the
      controller achieved and the photosensor anchor what the eye received; the
@@ -44,8 +44,8 @@ REFERENCE_MS = -200.0
 
 # Panel a overlays two anchors. The online delay compensation was applied to the
 # presentation command, so `stim` shows what the controller achieved; the display
-# then takes a further 6.8 ms to change luminance, so `photo` shows what the eye
-# actually received. `photo` is the analogue photodiode rise rather than the
+# then needs time of its own to change luminance, so `photo` shows what the eye
+# actually received. `photo` is the analog photodiode rise rather than the
 # StimTrak marker B, whose offset moves with a threshold set by hand once per
 # session; B is reported in Table 5 instead. Panels b and c use `photo`.
 ANCHOR = "photo"
@@ -80,12 +80,12 @@ def load(cache: Path):
 
 
 def panel_a(fig, gs, phases):
-    """Realised phase at the prestimulus reference, one polar panel per target.
+    """Realized phase at the prestimulus reference, one polar panel per target.
 
-    Both anchors are drawn on the same axes. They are the same trials measured
-    6.3 ms apart, so the two distributions differ by a rigid rotation of about
-    16 deg at 7 Hz and nothing else; overlaying them shows the display latency
-    directly, as the gap between the two mean vectors.
+    Both anchors are drawn on the same axes. They are the same trials read at
+    two instants either side of the display latency, so the two distributions
+    differ by a rigid rotation and nothing else; overlaying them shows that
+    latency directly, as the gap between the two mean vectors.
     """
     axes = []
     for k, cond in enumerate(range(1, 7)):
@@ -93,25 +93,24 @@ def panel_a(fig, gs, phases):
         axes.append(ax)
         target = TARGET[cond]
 
-        hists, biases = [], []
-        for ref, colour, _ in OVERLAY:
+        hists = []
+        for ref, color, _ in OVERLAY:
             a = np.asarray(phases[ref][cond][REFERENCE_MS], float)
             counts, edges = np.histogram(a, bins=36, range=(-math.pi, math.pi))
             hists.append((edges[:-1] + np.diff(edges) / 2, np.diff(edges),
-                          counts, colour, circmean(a)))
-            biases.append(math.degrees(wrap(circmean(a) - target)))
+                          counts, color, circmean(a)))
 
         top = max(h[2].max() for h in hists) or 1
-        for centres, widths, counts, colour, _ in hists:
-            ax.bar(centres, counts, width=widths, color=colour, alpha=0.45,
+        for centers, widths, counts, color, _ in hists:
+            ax.bar(centers, counts, width=widths, color=color, alpha=0.45,
                    edgecolor="none", zorder=1)
 
         # the stim mean lands on the target by design, so one of the two has to be
         # drawn over the other. The target goes on top: it is dashed, so the mean
         # underneath still shows through the gaps, whereas the reverse would hide
         # the target completely.
-        for _, _, _, colour, m in hists:
-            ax.plot([m, m], [0, top], "-", color=colour, lw=1.2, zorder=5)
+        for _, _, _, color, m in hists:
+            ax.plot([m, m], [0, top], "-", color=color, lw=1.2, zorder=5)
         ax.plot([target, target], [0, top], "--", color="black", lw=1.0, zorder=7)
 
         ax.set_theta_zero_location("E")
@@ -121,9 +120,12 @@ def panel_a(fig, gs, phases):
         ax.tick_params(pad=0.5)
         ax.grid(lw=0.4, color="#CCCCCC")
         ax.spines["polar"].set_linewidth(0.6)
-        ax.set_title(f"target {label(cond)}\n"
-                     f"bias {biases[0]:+.1f}° (stim), {biases[1]:+.1f}° (photodiode)",
-                     fontsize=st.FS_ANNOT, pad=6)
+        # Only the target is named on the panel. The bias for both anchors is a
+        # number, not a pattern, so it belongs in Table 5 and in
+        # figure2_phase_targeting_summary.csv rather than on the figure; what the
+        # figure has to show is the gap between the two mean vectors, which it
+        # shows without being annotated.
+        ax.set_title(f"target {label(cond)}", fontsize=st.FS_ANNOT, pad=6)
     return axes
 
 
@@ -145,8 +147,8 @@ def panel_b(fig, gs, channels, plf):
         ax.set_title(f"{o:+d} ms", fontsize=st.FS_ANNOT, fontweight=weight, pad=3)
     axes[0].set_ylabel("relative to visual onset", fontsize=st.FS_TICK, labelpad=1)
 
-    # the colourbar column spans the full row height, but the topomaps are square
-    # and so occupy only part of it; match the colourbar to their drawn extent
+    # the colorbar column spans the full row height, but the topomaps are square
+    # and so occupy only part of it; match the colorbar to their drawn extent
     pos = axes[0].get_position()
     cax = fig.add_axes([gs[0, -1].get_position(fig).x0, pos.y0, 0.008, pos.height])
     cb = fig.colorbar(im, cax=cax)
@@ -164,7 +166,7 @@ def panel_c(fig, gs, phases, offsets):
              if len(phases[ANCHOR][cond][o]) else np.nan for o in offsets]
         ax.plot(offsets, r, lw=0.9, label=f"target {label(cond)}")
     ax.axvline(REFERENCE_MS, color="black", ls="--", lw=0.9)
-    ax.axvline(0, color="grey", ls="--", lw=0.9)
+    ax.axvline(0, color="gray", ls="--", lw=0.9)
     ax.set_xlabel("time relative to the photodiode onset (ms)")
     ax.set_ylabel("phase-locking factor")
     ax.set_xlim(offsets[0], offsets[-1])
@@ -173,7 +175,7 @@ def panel_c(fig, gs, phases, offsets):
               bbox_to_anchor=(0.998, 0.995), columnspacing=1.0,
               handlelength=1.3, labelspacing=0.35, borderaxespad=0.2)
     ax.text(REFERENCE_MS, 1.02, "prestimulus target", ha="center", fontsize=st.FS_TICK)
-    ax.text(0, 1.02, "visual onset", ha="center", fontsize=st.FS_TICK, color="grey")
+    ax.text(0, 1.02, "visual onset", ha="center", fontsize=st.FS_TICK, color="gray")
     for sp in ("top", "right"):
         ax.spines[sp].set_visible(False)
     return ax
@@ -194,12 +196,12 @@ def plot(path: Path, phases, offsets, channels, plf):
                                                wspace=0.15), channels, plf)
     ax_c = panel_c(fig, outer[3].subgridspec(1, 1), phases, offsets)
 
-    # the target/mean key belongs to panel a; centre it in the spacer, which is
+    # the target/mean key belongs to panel a; center it in the spacer, which is
     # clear of both the 270 deg labels hanging below the polar block and the
     # latency titles above the topographies
     spacer = outer[1].get_position(fig)
     handles = [plt.Line2D([], [], color="black", ls="--", lw=1.0, label="target phase")]
-    handles += [plt.Line2D([], [], color=c, lw=1.2, label=f"realised, anchored on {name}")
+    handles += [plt.Line2D([], [], color=c, lw=1.2, label=f"realized, anchored on {name}")
                 for _, c, name in OVERLAY]
     fig.legend(handles=handles, loc="center",
                bbox_to_anchor=(0.5, spacer.y0 + spacer.height / 2),

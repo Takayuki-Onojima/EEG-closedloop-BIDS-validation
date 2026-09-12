@@ -137,7 +137,7 @@ def build_timing_samples(root: Path):
 def analog_rows(root: Path, out: Path):
     """Rows comparing the StimTrak marker B with the photodiode signal itself.
 
-    B and the analogue onset are two readings of the same flash, so their
+    B and the analog onset are two readings of the same flash, so their
     difference isolates what the hand-set StimTrak threshold contributed. Both
     are restricted to the same attended trials the rows above use, so that every
     row of the table refers to one trial set.
@@ -172,7 +172,7 @@ def analog_rows(root: Path, out: Path):
     return [
         {
             "Comparison": "stimulation-PC trigger - photodiode onset",
-            "Definition": "Delay from the stimulation-PC trigger to the half-amplitude rise of the photodiode pulse on the analogue `PhotoSensor` channel",
+            "Definition": "Delay from the stimulation-PC trigger to the half-amplitude rise of the photodiode pulse on the analog `PhotoSensor` channel",
             "Mean delay (ms)": round(float(stim_to_an.mean()), 2),
             "SD (ms)": round(float(stim_to_an.std(ddof=1)), 2),
             "Number of trials": int(stim_to_an.size),

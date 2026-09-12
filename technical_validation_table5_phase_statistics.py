@@ -1,8 +1,8 @@
-"""Table 5 - circular statistics of the realised stimulation phase.
+"""Table 5 - circular statistics of the realized stimulation phase.
 
-Table 4 already reports the latencies between the three triggers in the time
+Table 4 already reports the latencies between the four timestamps in the time
 domain. This table reports the same comparison in the angular domain: where the
-realised phase landed relative to each target, and how tightly it was
+realized phase landed relative to each target, and how tightly it was
 concentrated, for each of the three possible timing anchors.
 
 All statistics are circular (Fisher, Statistical Analysis of Circular Data,
@@ -33,7 +33,7 @@ REF_LABEL = {
     "A": "Speedgoat trigger (A)",
     "stim": "Stimulation-PC trigger",
     "B": "StimTrak marker (B)",
-    "photo": "Photodiode onset (analogue)",
+    "photo": "Photodiode onset (analog)",
 }
 REFS = ("A", "stim", "B", "photo")
 
@@ -54,7 +54,7 @@ def circ_stats(angles):
 
 
 def main():
-    root, out = st.parse_paths("Table 5 - circular statistics of the realised stimulation phase")
+    root, out = st.parse_paths("Table 5 - circular statistics of the realized stimulation phase")
     z = np.load(out / "trigger_reference_comparison.npz", allow_pickle=True)
     phases = z["phases"].item()
 
@@ -86,10 +86,10 @@ def main():
     # summary rows carry all the information they add.
     PRIMARY = "photo"
     lines = [
-        "## Table 5. Circular statistics of the realised stimulation phase "
+        "## Table 5. Circular statistics of the realized stimulation phase "
         "in the phase-dependent sessions",
         "",
-        f"Realised phase by condition, anchored on the {REF_LABEL[PRIMARY].lower()}:",
+        f"Realized phase by condition, anchored on the {REF_LABEL[PRIMARY].lower()}:",
         "",
         "| Condition | Target (deg) | n | Circular mean (deg) | "
         "Bias from target (deg) | R | Circular SD (deg) | 95% CI (+/- deg) | Rayleigh Z |",
@@ -136,7 +136,7 @@ def main():
         "inter-trigger latencies of Table 4 expressed as phase, while leaving the mean resultant "
         f"length between {min(Rs):.3f} and {max(Rs):.3f} throughout. Per-condition values for all "
         "four anchors are in the accompanying CSV. The two display anchors read the same physical "
-        "flash: the photodiode onset is the half-amplitude rise of the analogue PhotoSensor pulse, "
+        "flash: the photodiode onset is the half-amplitude rise of the analog PhotoSensor pulse, "
         "while B is the marker the StimTrak emitted when that rise crossed a threshold set by hand "
         "once per session. B therefore carries a per-session constant offset, which is why the "
         "photodiode onset is the anchor used here for absolute phase; the correction onto it is "

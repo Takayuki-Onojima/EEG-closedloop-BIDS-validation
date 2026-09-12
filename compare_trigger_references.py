@@ -4,21 +4,21 @@ Four timestamps exist per stimulus:
   A     - realtime_trigger, emitted by the Speedgoat when the target phase was detected
   stim  - the stimulation PC's own trigger, i.e. the presentation command
   B     - the StimTrak marker, emitted when the photodiode signal crossed threshold
-  photo - the same rise measured from the analogue PhotoSensor channel itself, at
+  photo - the same rise measured from the analog PhotoSensor channel itself, at
           half the pulse amplitude, by code/photodiode_onset.py
 
 The intended -200 ms prestimulus reference can be anchored to any of them, and
-the choice shifts the realised phase by the inter-trigger latency. This script
+the choice shifts the realized phase by the inter-trigger latency. This script
 measures the resulting phase distribution for all four so the anchor can be
 chosen from the data.
 
 B and photo track the same physical flash and carry the same trial-to-trial
-jitter: B minus photo has a within-participant SD of only 0.06 ms, so the marker
-adds no noise of its own. But B fires wherever a hand-set threshold happened to
-sit on the rise, and participant means of B span 3.00 ms where those of photo
-span 0.47 ms. photo is therefore the anchor used for absolute phase, and B is
-retained here so that a reader who prefers the marker can read off the
-correction.
+jitter, so the marker adds no noise of its own. But B fires wherever a hand-set
+threshold happened to sit on the rise, which displaces it by an amount that is
+constant within a session and differs between them, whereas photo is read with
+one criterion throughout. photo is therefore the anchor used for absolute phase,
+and B is retained here so that a reader who prefers the marker can read off the
+correction. Table 4 reports the size of both effects.
 
 Preprocessing reproduces the online control pipeline and is carried out with
 MNE-Python, so that channel names, units and the reference scheme are handled by
@@ -37,11 +37,10 @@ The band-pass deserves a note. Online, the controller had to run causally and
 used a 128th-order FIR at 500 Hz, which is only 258 ms long and therefore passes
 a good deal more than 6-8 Hz. Offline there is no such constraint, so the filter
 here is designed properly and measures the phase of the 6-8 Hz component itself.
-The two definitions do not agree: against the controller's own broadband
-definition the six conditions reach a resultant length of about 0.93, against
-the narrow-band definition about 0.69. Both are correct measurements of
-different quantities, and the narrow-band one is used here because it is what a
-reader recomputing the phase from the released data will obtain.
+The two therefore define "phase" differently and do not give the same resultant
+length. Both are correct measurements of different quantities; the narrow-band
+one is used here because it is what a reader recomputing the phase from the
+released data will obtain, and because it is the more conservative of the two.
 
 Phase is interpolated linearly in the complex plane, because index rounding at
 500 Hz alone would introduce up to +-2.7 deg, the same order as the bias being
@@ -110,7 +109,7 @@ def analytic_at(z, t_s):
 def collect(root: Path, out: Path):
     chmap = {r["participant_id"]: r["phase_estimation_channel"]
              for r in read_tsv(root / "participants.tsv")}
-    # analogue onsets, keyed per run by the stimulation-PC trigger time they
+    # analog onsets, keyed per run by the stimulation-PC trigger time they
     # belong to, so they can be looked up while walking the event file
     analog = {stem: dict(zip(np.round(stim, 6), an))
               for stem, (_, stim, _, an) in pd.load(out).items()}
@@ -184,7 +183,7 @@ def wrap(x):
 
 
 def main():
-    root, out = st.parse_paths("Realised phase measured against each of the three available triggers")
+    root, out = st.parse_paths("Realized phase measured against each of the four available anchors")
     cache = out / "trigger_reference_comparison.npz"
 
     if cache.exists():

@@ -1,4 +1,4 @@
-# Code release for the manuscript: "An EEG dataset acquired during closed-loop phase-dependent visual stimulation"
+# Code release for the manuscript: "An EEG dataset of visual target presentation triggered by ongoing EEG phase"
 
 Scripts that regenerate the technical-validation outputs reported in the data
 descriptor: Tables 3, 4 and 5, and Figure 2. They read a released copy of
@@ -14,16 +14,15 @@ https://github.com/Takayuki-Onojima/EEG-closedloop-BIDS-validation.
 ### 1. Visual onset
 
 `photodiode_onset.py` — measures when the display actually changed, from the
-analogue `PhotoSensor` channel rather than from a marker.
+analog `PhotoSensor` channel rather than from a marker.
 
 The dataset carries two references derived from the same photodiode: the
-analogue channel, and marker `B`, which the in-line StimTrak emits when that
+analog channel, and marker `B`, which the in-line StimTrak emits when that
 signal crosses a threshold. Both see the same flash and carry the same
-trial-to-trial jitter — `B` minus the analogue onset has a within-participant SD
-of 0.06 ms — but the threshold had to be set by hand for each session, and a
-threshold decides *where on the rise* the marker fires. Participant means of `B`
-therefore span 3.10 ms where the analogue onset spans 0.33 ms, which is 8 deg
-against 0.8 deg of 7 Hz phase.
+trial-to-trial jitter, so the marker adds no noise of its own. But the threshold
+had to be set by hand for each session, and a threshold decides *where on the
+rise* the marker fires, so `B` is displaced by an amount that is constant within
+a session and differs between them. Table 4 reports the size of both effects.
 
 This script takes the onset as the half-amplitude crossing of the pulse,
 interpolated between samples at the native 5 kHz, with the same criterion in
@@ -32,7 +31,7 @@ Table 4 all read, so it has to run first.
 
 ### 2. Phase extraction
 
-`compare_trigger_references.py` — measures the realised stimulation phase against
+`compare_trigger_references.py` — measures the realized stimulation phase against
 each of the four anchors available for every stimulus:
 
 - `A`, the trigger the Speedgoat emitted when it detected the target phase
@@ -41,14 +40,14 @@ each of the four anchors available for every stimulus:
 - the photodiode onset, from `photodiode_onset.py`
 
 Because these differ only by the inter-trigger latency, the choice of anchor
-shifts the realised phase; this script quantifies that. It writes a cache that
+shifts the realized phase; this script quantifies that. It writes a cache that
 Table 5 and Figure 2 both consume.
 
 ### 3. Tables
 
-- `technical_validation_table3_trial_completeness.py` — trial counts per participant
-- `technical_validation_table4_timing_consistency.py` — latencies between the three triggers
-- `technical_validation_table5_phase_statistics.py` — circular statistics of the realised phase
+- `technical_validation_table3_trial_completeness.py` — trial counts per run, which Table 3 reports summed per participant
+- `technical_validation_table4_timing_consistency.py` — latencies between the four timestamps
+- `technical_validation_table5_phase_statistics.py` — circular statistics of the realized phase
 
 ### 4. Figure
 
@@ -108,9 +107,9 @@ The white patch is drawn for a single frame, so the photodiode sees a brief flas
 that saturates the amplifier. The onset is taken at half the pulse amplitude,
 which is stable against the exact saturation level, and interpolated between
 samples. Results are cached in `photodiode_onset_cache.npz`, and the
-participant-level offsets between `B` and the analogue onset are written to
+participant-level offsets between `B` and the analog onset are written to
 `photodiode_onset_per_participant.csv` so that analyses built on the marker can
-be converted onto the analogue onset.
+be converted onto the analog onset.
 
 Neither reference is the retinal onset: the photodiode watches the upper-left
 corner of the screen while the stimuli were presented near the middle, and an LCD
@@ -140,19 +139,18 @@ header rather than assumed:
   the closed-loop system targeted
 
 The photodiode onset is the anchor used for absolute phase. Moving to it from `B`
-does not make the bias smaller — it goes from +13.67 to +15.00 deg, because the
-analogue onset is 0.51 ms later than the marker — but it makes the offset the
-same for all 18 participants instead of one that moves with a knob setting.
+does not make the bias smaller, since the analog onset comes slightly later than
+the marker, but it makes the offset the same for every participant instead of one
+that moves with a knob setting. Table 5 reports the bias for all four anchors.
 
 The band-pass deserves a note. Online, the controller had to run causally and
 used a 128th-order FIR at 500 Hz, which is only 258 ms long and passes 4.4 to
 9.6 Hz at half power rather than the nominal 6 to 8 Hz. Offline there is no such
 constraint, and the filter used here is 3.3 s long and passes 5.6 to 8.4 Hz. The
-two therefore define "phase" differently: against the controller's own broadband
-definition the six conditions reach a resultant length of about 0.93, against the
-narrow-band definition about 0.69. Both are correct measurements of different
-quantities; the narrow-band one is used here because it is what a reader
-recomputing the phase of the 6-8 Hz component from the released data will obtain.
+two therefore define "phase" differently and do not give the same resultant
+length. Both are correct measurements of different quantities; the narrow-band
+one is used here because it is what a reader recomputing the phase of the 6-8 Hz
+component from the released data will obtain.
 
 Reading and filtering all 109 phase-dependent runs takes roughly a quarter of an
 hour, so the extracted phases are cached in
@@ -163,12 +161,24 @@ rerun in seconds.
 ### Topography (`compute_plf_topography.py`)
 
 Same preprocessing, but applied to all 63 scalp electrodes rather than one, and
-therefore about three times slower. For each stimulus the target phase assigned
-to that trial is subtracted from the measured phase, which is what makes the six
-conditions poolable — without it they would cancel, since they are spread evenly
-around the cycle by design. Locking is summarised per electrode as the resultant
-length of those differences, computed within each participant and then averaged
-across participants so that participants with more trials do not dominate.
+therefore about three times slower. Locking is summarized per electrode as the
+resultant length of the measured phases within each target condition, averaged
+over the six conditions. The conditions are kept separate rather than pooled
+because they are spread evenly around the cycle by design and would otherwise
+cancel; within a condition the target is a constant, so subtracting it would
+only rotate the trials and leave the resultant length alone.
+
+The trials of all participants are pooled within a condition before the
+resultant length is taken. A resultant length is biased upwards at small N, by
+roughly `sqrt(rho^2 + (1 - rho^2)/N)`, and averaging per-participant values
+removes only the variance of that bias, not the bias itself. Pooling keeps N as
+large as the data allow, which matters most where locking is weak. Trial counts
+are near equal between participants, so pooling gives none of them undue
+weight.
+
+A value near 1 therefore means the electrode held a fixed relation to the
+intended phase on every trial, not that the relation was zero: a constant offset
+leaves the resultant length unchanged, and the offset is the subject of Table 5.
 Electrode positions come from MNE's `standard_1005` montage. Results are cached
 in `plf_topography_cache.npz` and also written as `plf_topography.csv`; with the
 cache present, Figure 2 redraws in seconds.
@@ -196,12 +206,12 @@ analysis and Figure 2 additionally need the packages below.
 pip install -r requirements.txt
 ```
 
-| Package | Tested version |
-| --- | --- |
-| `numpy` | 2.0.1 |
-| `scipy` | 1.15.3 |
-| `matplotlib` | 3.10.6 |
-| `mne` | 1.12.1 |
+| Package        | Tested version |
+| -------------- | -------------- |
+| `numpy`      | 2.0.1          |
+| `scipy`      | 1.15.3         |
+| `matplotlib` | 3.10.6         |
+| `mne`        | 1.12.1         |
 
 Figure 2 is typeset in Arial; if it is unavailable, matplotlib falls back to
 Helvetica and then to DejaVu Sans and the figure still renders.
@@ -228,7 +238,9 @@ pip install mne
 ## License
 
 The code in this directory is released under the MIT License; see `LICENSE`.
-Copyright (c) 2025 Takayuki Onojima, Keiichi Kitajo.
+Copyright (c) 2025 Takayuki Onojima.
 
-The dataset these scripts analyse is distributed separately, under the Creative
-Commons Attribution-NonCommercial 4.0 International License.
+The MIT License covers the code only. The dataset itself is distributed under the
+Creative Commons Attribution 4.0 International License (CC BY 4.0); the license is
+stated on the repository page from which the dataset is obtained, not in
+`dataset_description.json`.

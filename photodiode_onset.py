@@ -1,13 +1,13 @@
 """Visual onset measured from the photodiode signal itself, rather than from `B`.
 
 The dataset carries two timing references derived from the same photodiode: the
-analogue `PhotoSensor` channel, and marker `B`, which the in-line StimTrak emits
+analog `PhotoSensor` channel, and marker `B`, which the in-line StimTrak emits
 when that signal crosses a threshold. `B` is present on every stimulus and its
 trial-to-trial jitter is the display's own, but the threshold had to be set by
 hand for each session, and a threshold sets *when during the rise* the trigger
 fires. Any change to it shifts every `B` in that session by a constant.
 
-Measuring the same rise from the analogue channel with one criterion for all
+Measuring the same rise from the analog channel with one criterion for all
 sessions removes that free parameter. The white patch is drawn for a single
 frame, so the photodiode sees a brief flash that saturates the amplifier; the
 onset is therefore taken as the crossing of half the pulse amplitude, linearly
@@ -20,7 +20,7 @@ top to bottom, so both carry a constant positional offset of up to one frame.
 That offset is common to every trial, participant and condition.
 
 Writes one cache holding, per phase-dependent visual stimulus, the stimulation-PC
-trigger time, the `B` time and the analogue onset time. `compare_trigger_
+trigger time, the `B` time and the analog onset time. `compare_trigger_
 references.py` and Table 4 both read it.
 """
 
@@ -102,7 +102,7 @@ def collect(root: Path):
 
 
 def load(out: Path):
-    """{run stem: (subject, stim times, B times, analogue onset times)} in seconds."""
+    """{run stem: (subject, stim times, B times, analog onset times)} in seconds."""
     cache = out / CACHE_NAME
     if not cache.exists():
         raise SystemExit(f"missing {cache}\nrun code/photodiode_onset.py first")
@@ -119,7 +119,7 @@ def main():
         print(f"wrote {cache}")
     rec = load(out)
 
-    # per participant: the analogue onset, B, and the constant between them
+    # per participant: the analog onset, B, and the constant between them
     by_sub = {}
     for sub, stim, bt, an in rec.values():
         d = by_sub.setdefault(sub, [[], []])

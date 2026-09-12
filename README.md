@@ -238,7 +238,7 @@ pip install mne
 ## License
 
 The code in this directory is released under the MIT License; see `LICENSE`.
-Copyright (c) 2025 Takayuki Onojima.
+Copyright (c) 2026 Takayuki Onojima.
 
 The MIT License covers the code only. The dataset itself is distributed under the
 Creative Commons Attribution 4.0 International License (CC BY 4.0); the license is

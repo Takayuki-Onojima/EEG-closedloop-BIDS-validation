@@ -1,9 +1,9 @@
 # Code release for the manuscript: "An EEG dataset of visual target presentation triggered by ongoing EEG phase"
 
 Scripts that regenerate the technical-validation outputs reported in the data
-descriptor: Tables 3, 4 and 5, and Figure 2. They read a released copy of
-the BIDS dataset and write to `derivatives/technical_validation/` inside it. None
-of them modify the released data.
+descriptor: Tables 3, 4 and 5, and Figure 2. They read a copy of the BIDS
+dataset and write to `derivatives/technical_validation/` inside it. None of them
+modify the data.
 
 This directory is self-contained: it is both the `code/` directory of the BIDS
 dataset and the whole of the repository at
@@ -240,7 +240,5 @@ pip install mne
 The code in this directory is released under the MIT License; see `LICENSE`.
 Copyright (c) 2026 Takayuki Onojima.
 
-The MIT License covers the code only. The dataset itself is distributed under the
-Creative Commons Attribution 4.0 International License (CC BY 4.0); the license is
-stated on the repository page from which the dataset is obtained, not in
-`dataset_description.json`.
+The MIT License covers the code only. The dataset is released separately, under
+its own license, stated on the repository page that hosts it.
